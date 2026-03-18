@@ -63,6 +63,7 @@
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.9);
   padding: 18px 16px 20px;
   backdrop-filter: blur(16px);
+  overflow: visible;
 }
 
 .cardHeader {
@@ -114,10 +115,12 @@
 }
 
 .teamBox {
+  position: relative;
   padding: 16px;
   border-radius: 16px;
   border: 1px solid rgba(148, 163, 184, 0.4);
   backdrop-filter: blur(12px);
+  overflow: visible;
 }
 
 .teamOne {
@@ -161,6 +164,7 @@
 
 .searchDropdown {
   position: relative;
+  z-index: 40;
 }
 
 .inputShell {
@@ -209,23 +213,24 @@
 }
 
 .list {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 4px);
   max-height: 230px;
   background: rgba(15, 23, 42, 0.98);
   border-radius: 14px;
   border: 1px solid rgba(148, 163, 184, 0.5);
   overflow-y: auto;
-  z-index: 20;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.95);
+}
+
+.listPortal {
+  position: fixed;
+  z-index: 9999;
 }
 
 .listItem {
   padding: 9px 12px;
   font-size: 13px;
   cursor: pointer;
+  color: #e5e7eb;
 }
 
 .listItem:hover {

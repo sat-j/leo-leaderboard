@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import styles from './PublicScoreEntry.module.css';
 
@@ -35,7 +36,9 @@ interface PlayerPickerProps {
 function PlayerPicker({ label, value, onChange, allPlayers }: PlayerPickerProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const inputShellRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -48,6 +51,43 @@ function PlayerPicker({ label, value, onChange, allPlayers }: PlayerPickerProps)
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    function updateDropdownPosition() {
+      const inputRect = inputShellRef.current?.getBoundingClientRect();
+      if (!inputRect) {
+        return;
+      }
+
+      const viewportPadding = 16;
+      const desiredWidth = inputRect.width;
+      const maxWidth = window.innerWidth - viewportPadding * 2;
+      const width = Math.min(desiredWidth, maxWidth);
+      const left = Math.min(
+        Math.max(inputRect.left, viewportPadding),
+        window.innerWidth - width - viewportPadding
+      );
+
+      setDropdownStyle({
+        top: inputRect.bottom + 6,
+        left,
+        width,
+      });
+    }
+
+    updateDropdownPosition();
+    window.addEventListener('resize', updateDropdownPosition);
+    window.addEventListener('scroll', updateDropdownPosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updateDropdownPosition);
+      window.removeEventListener('scroll', updateDropdownPosition, true);
+    };
+  }, [open]);
+
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
@@ -57,6 +97,33 @@ function PlayerPicker({ label, value, onChange, allPlayers }: PlayerPickerProps)
 
     return allPlayers
       .filter((player) => player.displayName.toLowerCase().includes(normalizedQuery))
+      .sort((left, right) => {
+        const leftName = left.displayName.toLowerCase();
+        const rightName = right.displayName.toLowerCase();
+
+        const getRank = (name: string) => {
+          if (name === normalizedQuery) {
+            return 0;
+          }
+
+          if (name.startsWith(normalizedQuery)) {
+            return 1;
+          }
+
+          if (name.split(/\s+/).some((part) => part.startsWith(normalizedQuery))) {
+            return 2;
+          }
+
+          return 3;
+        };
+
+        const rankDiff = getRank(leftName) - getRank(rightName);
+        if (rankDiff !== 0) {
+          return rankDiff;
+        }
+
+        return left.displayName.localeCompare(right.displayName);
+      })
       .slice(0, 24);
   }, [allPlayers, query]);
 
@@ -66,7 +133,7 @@ function PlayerPicker({ label, value, onChange, allPlayers }: PlayerPickerProps)
     <div className={styles.field} ref={wrapperRef}>
       <div className={styles.label}>{label}</div>
       <div className={styles.searchDropdown}>
-        <div className={styles.inputShell}>
+        <div className={styles.inputShell} ref={inputShellRef}>
           <input
             className={styles.input}
             type="text"
@@ -97,27 +164,32 @@ function PlayerPicker({ label, value, onChange, allPlayers }: PlayerPickerProps)
           ) : null}
         </div>
 
-        {open && filtered.length > 0 ? (
-          <div className={styles.list}>
-            {filtered.map((player) => {
-              const selected = player.id === value?.id;
-              return (
-                <div
-                  key={player.id}
-                  className={`${styles.listItem} ${selected ? styles.listItemSelected : ''}`.trim()}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    onChange(player);
-                    setQuery('');
-                    setOpen(false);
-                  }}
-                >
-                  {player.displayName}
+        {open && filtered.length > 0
+          ? createPortal(
+              <div className={styles.listPortal} style={dropdownStyle}>
+                <div className={styles.list}>
+                  {filtered.map((player) => {
+                    const selected = player.id === value?.id;
+                    return (
+                      <div
+                        key={player.id}
+                        className={`${styles.listItem} ${selected ? styles.listItemSelected : ''}`.trim()}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          onChange(player);
+                          setQuery('');
+                          setOpen(false);
+                        }}
+                      >
+                        {player.displayName}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        ) : null}
+              </div>,
+              document.body
+            )
+          : null}
       </div>
     </div>
   );
@@ -188,7 +260,7 @@ export default function PublicScoreEntry({ mode = 'page' }: PublicScoreEntryProp
   async function loadPlayers() {
     try {
       setLoadingPlayers(true);
-      const response = await fetch('/api/public/players');
+      const response = await fetch('/api/public/players?limit=250');
       const result = await response.json();
 
       if (!response.ok || !result.success) {

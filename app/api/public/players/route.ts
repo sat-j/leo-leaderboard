@@ -22,8 +22,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const active = parseActiveFilter(searchParams.get('active'));
     const search = searchParams.get('search')?.trim() || undefined;
-    const limitParam = Number.parseInt(searchParams.get('limit') || '100', 10);
-    const limit = Number.isNaN(limitParam) ? 100 : limitParam;
+    const limitParam = Number.parseInt(searchParams.get('limit') || '250', 10);
+    const limit = Number.isNaN(limitParam) ? 250 : limitParam;
 
     const players = await listPlayers({ active, search, limit });
 
