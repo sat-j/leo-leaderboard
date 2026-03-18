@@ -135,6 +135,7 @@ export default function AdminPage() {
   const [matchStatusFilter, setMatchStatusFilter] = useState('all');
   const [matchPage, setMatchPage] = useState(1);
   const [isPlayersOpen, setIsPlayersOpen] = useState(false);
+  const [isRebuildHistoryOpen, setIsRebuildHistoryOpen] = useState(false);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
   const [playerSearch, setPlayerSearch] = useState('');
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -688,23 +689,32 @@ export default function AdminPage() {
               <h2 className="text-xl font-semibold">Recent Processing Runs</h2>
               <p className="mt-2 text-sm text-slate-300">Latest rebuild outcomes for quick sanity checks.</p>
             </div>
+            <button
+              type="button"
+              onClick={() => setIsRebuildHistoryOpen((current) => !current)}
+              className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800"
+            >
+              {isRebuildHistoryOpen ? 'Hide History' : 'Show History'}
+            </button>
           </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {processingRuns.map((run) => (
-              <article key={run.id} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-white">{run.status}</p>
-                  <span className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300">{run.scope}</span>
-                </div>
-                <p className="mt-3 text-sm text-slate-200">{summarizeRun(run)}</p>
-                <div className="mt-3 space-y-1 text-xs text-slate-400">
-                  <p>Started: {formatTimestamp(run.started_at)}</p>
-                  <p>Finished: {formatTimestamp(run.finished_at)}</p>
-                  {run.error_message ? <p className="text-rose-300">{run.error_message}</p> : null}
-                </div>
-              </article>
-            ))}
-          </div>
+          {isRebuildHistoryOpen ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {processingRuns.map((run) => (
+                <article key={run.id} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-white">{run.status}</p>
+                    <span className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300">{run.scope}</span>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-200">{summarizeRun(run)}</p>
+                  <div className="mt-3 space-y-1 text-xs text-slate-400">
+                    <p>Started: {formatTimestamp(run.started_at)}</p>
+                    <p>Finished: {formatTimestamp(run.finished_at)}</p>
+                    {run.error_message ? <p className="text-rose-300">{run.error_message}</p> : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : null}
         </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 sm:p-6">

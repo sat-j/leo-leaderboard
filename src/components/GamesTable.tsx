@@ -10,12 +10,14 @@ interface GamesTableProps {
 
 export default function GamesTable({ matches }: GamesTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const surfaceClass =
+    'rounded-[10px] border-0 border-[#1b1b1b] bg-[linear-gradient(180deg,rgba(10,22,44,0.9),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.01))] shadow-[0_14px_32px_rgba(0,0,0,0.28)] backdrop-blur-[10px]';
 
   if (matches.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">Matches</h2>
-        <p className="text-gray-500">No matches found for this play date.</p>
+      <div className={`${surfaceClass} p-4 sm:p-5`}>
+        <h2 className="mb-3 text-xl font-bold text-white">Matches</h2>
+        <p className="text-sm text-electric-200/80">No matches found for this play date.</p>
       </div>
     );
   }
@@ -35,65 +37,65 @@ export default function GamesTable({ matches }: GamesTableProps) {
     });
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
-        <h2 className="text-2xl font-bold text-gray-800">Matches</h2>
+    <div className={`${surfaceClass} p-4 sm:p-5`}>
+      <div className="mb-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
+        <h2 className="text-lg font-bold text-white sm:text-xl">Matches</h2>
         
         {/* Search Input */}
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <label className="text-sm font-medium text-gray-700">Search:</label>
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <label className="text-xs font-medium text-electric-200 sm:text-sm">Search:</label>
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Player name..."
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-electric-500 w-full sm:w-48"
+            className="w-full rounded-lg border border-white/10 bg-[linear-gradient(180deg,rgba(10,22,44,0.88),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.01))] px-3 py-1.5 text-sm text-white placeholder:text-electric-200/45 focus:outline-none focus:ring-2 focus:ring-electric-500 sm:w-48"
           />
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+        <table className="min-w-full divide-y divide-white/10">
+          <thead className="bg-white/6">
             <tr>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="py-3 text-left text-[11px] font-medium uppercase tracking-wider text-electric-200/80">
                 #
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-electric-200/80">
                 Team 1
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wider text-electric-200/80">
                 Team 2
               </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-center text-[11px] font-medium uppercase tracking-wider text-electric-200/80">
                 Score
               </th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="divide-y divide-white/8 bg-transparent">
             {filteredMatches.map(({ match, originalIndex }) => {
               const team1Won = match.score1 > match.score2;
               
               return (
-                <tr key={originalIndex} className="hover:bg-gray-50">
-                  <td className="whitespace-nowrap text-sm text-gray-900">
+                <tr key={originalIndex} className="hover:bg-white/5">
+                  <td className="whitespace-nowrap text-xs text-electric-100 sm:text-sm">
                     {originalIndex + 1}
                   </td>
-                  <td className={`px-1 py-3 text-xs ${team1Won ? 'font-semibold text-green-700' : 'text-gray-700'}`}>
+                  <td className={`px-1 py-2.5 text-xs ${team1Won ? 'font-semibold text-emerald-300' : 'text-electric-100'}`}>
                     <div className="flex flex-col">
                       <span>{match.player1} / </span>
                       <span>{match.player2}</span>
                     </div>
                   </td>
-                  <td className={`px-1 py-3 text-xs ${!team1Won ? 'font-semibold text-green-700' : 'text-gray-700'}`}>
+                  <td className={`px-1 py-2.5 text-xs ${!team1Won ? 'font-semibold text-emerald-300' : 'text-electric-100'}`}>
                     <div className="flex flex-col">
                       <span>{match.player3} / </span>
                       <span>{match.player4}</span>
                     </div>
                   </td>
-                  <td className="px-1 py-3 whitespace-nowrap text-xs text-center">
-                    <span className={team1Won ? 'font-bold text-green-700' : 'text-gray-600'}>{match.score1}</span>
-                    <span className="text-gray-500"> - </span>
-                    <span className={!team1Won ? 'font-bold text-green-700' : 'text-gray-600'}>{match.score2}</span>
+                  <td className="px-1 py-2.5 whitespace-nowrap text-xs text-center">
+                    <span className={team1Won ? 'font-bold text-emerald-300' : 'text-electric-200/70'}>{match.score1}</span>
+                    <span className="text-electric-200/50"> - </span>
+                    <span className={!team1Won ? 'font-bold text-emerald-300' : 'text-electric-200/70'}>{match.score2}</span>
                   </td>
                 </tr>
               );
@@ -103,7 +105,7 @@ export default function GamesTable({ matches }: GamesTableProps) {
       </div>
       
       {filteredMatches.length === 0 && searchQuery.trim() && (
-        <p className="text-center text-gray-500 py-4">No matches found for "{searchQuery}"</p>
+        <p className="py-4 text-center text-sm text-electric-200/70">No matches found for "{searchQuery}"</p>
       )}
     </div>
   );

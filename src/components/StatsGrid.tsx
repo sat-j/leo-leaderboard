@@ -7,80 +7,102 @@ interface StatsGridProps {
   weekStats: WeekStats;
 }
 
+const SECTION_LABEL_CLASS = 'mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-electric-200';
+const METALLIC_SURFACE_CLASS =
+  'rounded-[10px] border-0 border-[#1b1b1b] bg-[linear-gradient(180deg,rgba(10,22,44,0.9),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.01))] shadow-[0_14px_32px_rgba(0,0,0,0.28)] backdrop-blur-[10px]';
+
+const TOP_MOVER_ACCENTS = [
+  'border-t-4 border-amber-400',
+  'border-t-4 border-slate-300',
+  'border-t-4 border-orange-400',
+];
+
 export default function StatsGrid({ weekStats }: StatsGridProps) {
+  const topMovers = weekStats.topPlayers.slice(0, 3);
+  const mostGames = weekStats.mostGamesPlayed.slice(0, 3);
+  const bestWinRate = weekStats.bestWinPercentage.slice(0, 3);
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-      {/* Top 3 Players of the Week */}
-      <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
-        <div className="flex items-center gap-3 mb-4">
-          <Trophy className="w-6 h-6 text-coral-600" />
-          <h3 className="text-lg font-semibold text-gray-800">Top Movers</h3>
+    <section className="mb-6 space-y-5">
+      <div>
+        <div className={SECTION_LABEL_CLASS}>
+          <Trophy className="h-3.5 w-3.5 text-amber-300" />
+          <span>Top Movers</span>
         </div>
-        <div className="space-y-3">
-          {weekStats.topPlayers.length > 0 ? (
-            weekStats.topPlayers.map((player, idx) => (
-              <div key={player.playerName} className="flex justify-between items-center">
-                <span className="font-medium text-gray-700">
-                  {idx + 1}. {player.playerName}
-                </span>
-                <span className="text-coral-600 font-semibold">
-                  +{player.ratingGain.toFixed(1)}
-                </span>
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          {topMovers.map((player, index) => (
+            <article
+              key={player.playerName}
+              className={`rounded-[5px] border-b-0 border-l-0 border-r-0 ${TOP_MOVER_ACCENTS[index] ?? TOP_MOVER_ACCENTS[TOP_MOVER_ACCENTS.length - 1]} bg-[linear-gradient(180deg,rgba(10,22,44,0.9),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.01))] shadow-[0_14px_32px_rgba(0,0,0,0.28)] backdrop-blur-[10px] flex min-h-[104px] flex-col items-center justify-between px-2 py-3 text-center sm:min-h-[120px] sm:px-3`}
+            >
+              <div className="text-lg font-black tracking-tight text-amber-300 sm:text-xl">#{index + 1}</div>
+              <div className="line-clamp-2 text-[11px] font-semibold leading-4 text-white sm:text-sm">
+                {player.playerName}
               </div>
-            ))
-          ) : (
-            <p className="text-gray-500 text-sm">No data available</p>
-          )}
+              <div className="text-sm font-bold text-emerald-300 sm:text-base">
+                {player.ratingGain >= 0 ? '+' : ''}
+                {player.ratingGain.toFixed(1)}
+              </div>
+            </article>
+          ))}
         </div>
       </div>
 
-      {/* Top 3 Most Games Played */}
-      <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
-        <div className="flex items-center gap-3 mb-4">
-          <Users className="w-6 h-6 text-electric-600" />
-          <h3 className="text-lg font-semibold text-gray-800">Most Games Played</h3>
+      <div>
+        <div className={SECTION_LABEL_CLASS}>
+          <span className="text-pink-300">▥</span>
+          <span>Today&apos;s Stats</span>
         </div>
-        <div className="space-y-3">
-          {weekStats.mostGamesPlayed.length > 0 ? (
-            weekStats.mostGamesPlayed.map((player, idx) => (
-              <div key={player.playerName} className="flex justify-between items-center">
-                <span className="font-medium text-gray-700">
-                  {idx + 1}. {player.playerName}
-                </span>
-                <span className="text-electric-600 font-semibold">
-                  {player.gamesPlayed} games
-                </span>
-              </div>
-            ))
-          ) : (
-            <p className="text-gray-500 text-sm">No data available</p>
-          )}
-        </div>
-      </div>
+        <div className="grid grid-cols-2 gap-3">
+          <article className={`${METALLIC_SURFACE_CLASS} p-4`}>
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-electric-200">
+              <Users className="h-3.5 w-3.5 text-violet-300" />
+              <span>Knees of Steel</span>
+            </div>
+            <p className="mb-3 text-[11px] text-electric-300/80">Most games</p>
+            <div className="space-y-2">
+              {mostGames.length > 0 ? (
+                mostGames.map((player, index) => (
+                  <div key={player.playerName} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate text-electric-100">
+                      <span className="mr-1 text-electric-300">{index + 1}.</span>
+                      {player.playerName}
+                    </span>
+                    <span className="shrink-0 font-semibold text-sky-300">{player.gamesPlayed}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-electric-200/70">No data</p>
+              )}
+            </div>
+          </article>
 
-      {/* Top 3 Win Percentage */}
-      <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
-        <div className="flex items-center gap-3 mb-4">
-          <Target className="w-6 h-6 text-purple-500" />
-          <h3 className="text-lg font-semibold text-gray-800">Best Win Rate</h3>
-        </div>
-        <div className="space-y-3">
-          {weekStats.bestWinPercentage.length > 0 ? (
-            weekStats.bestWinPercentage.map((player, idx) => (
-              <div key={player.playerName} className="flex justify-between items-center">
-                <span className="font-medium text-gray-700">
-                  {idx + 1}. {player.playerName}
-                </span>
-                <span className="text-purple-600 font-semibold">
-                  {player.winPercentage.toFixed(0)}%
-                </span>
-              </div>
-            ))
-          ) : (
-            <p className="text-gray-500 text-sm">Min. 3 games required</p>
-          )}
+          <article className={`${METALLIC_SURFACE_CLASS} p-4`}>
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-electric-200">
+              <Target className="h-3.5 w-3.5 text-pink-300" />
+              <span>Sniper Club</span>
+            </div>
+            <p className="mb-3 text-[11px] text-electric-300/80">Best win rate</p>
+            <div className="space-y-2">
+              {bestWinRate.length > 0 ? (
+                bestWinRate.map((player, index) => (
+                  <div key={player.playerName} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate text-electric-100">
+                      <span className="mr-1 text-electric-300">{index + 1}.</span>
+                      {player.playerName}
+                    </span>
+                    <span className="shrink-0 font-semibold text-fuchsia-300">
+                      {player.winPercentage.toFixed(0)}%
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-electric-200/70">No data</p>
+              )}
+            </div>
+          </article>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

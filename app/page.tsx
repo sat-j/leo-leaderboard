@@ -18,6 +18,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [isDesktopDrawerOpen, setIsDesktopDrawerOpen] = useState<boolean>(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(false);
+  const [isPlayerStatsOpen, setIsPlayerStatsOpen] = useState<boolean>(false);
+  const [isMatchesOpen, setIsMatchesOpen] = useState<boolean>(false);
 
   const fetchLeaderboardData = async (date?: string) => {
     setLoading(true);
@@ -118,20 +120,20 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-electric-900 to-electric-700">
-      <div className="container mx-auto px-4 py-8 max-w-7xl">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">
+      <div className="container mx-auto max-w-7xl px-3 py-3 sm:px-4 sm:py-8">
+        <div className="mb-4 text-center sm:mb-8">
+          <h1 className="mb-2 text-2xl font-bold text-white sm:text-4xl md:text-5xl">
             Leo Badminton Club - Leaderboard
           </h1>
-          <p className="text-electric-200">
+          <p className="text-sm text-electric-200 sm:text-base">
             {data.selectedDateLabel} leaderboard powered by processed match history
           </p>
-          <div className="mt-5 flex justify-center">
+          <div className="mt-4 flex justify-center sm:mt-5">
             {isDesktopViewport ? (
               <button
                 type="button"
                 onClick={() => setIsDesktopDrawerOpen(true)}
-                className="inline-flex items-center gap-2 rounded-full bg-coral-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-coral-900/30 transition-transform hover:-translate-y-0.5 hover:bg-coral-400"
+                className="inline-flex items-center gap-2 rounded-full bg-coral-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-coral-900/30 transition-transform hover:-translate-y-0.5 hover:bg-coral-400 sm:px-6 sm:py-3"
               >
                 <span>Enter Score</span>
                 <span aria-hidden="true">→</span>
@@ -139,7 +141,7 @@ export default function Home() {
             ) : (
               <Link
                 href="/submit-score"
-                className="inline-flex items-center gap-2 rounded-full bg-coral-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-coral-900/30 transition-transform hover:-translate-y-0.5 hover:bg-coral-400"
+                className="inline-flex items-center gap-2 rounded-full bg-coral-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-coral-900/30 transition-transform hover:-translate-y-0.5 hover:bg-coral-400 sm:px-6 sm:py-3"
               >
                 <span>Enter Score</span>
                 <span aria-hidden="true">→</span>
@@ -167,12 +169,46 @@ export default function Home() {
         />
 
         {data.playerWeekStats && data.playerWeekStats.length > 0 ? (
-          <PlayerStatsTable stats={data.playerWeekStats} title="Player Statistics" isOverall={false} />
+          <section className="mb-8">
+            <div className="mb-3 flex items-center justify-between sm:hidden">
+              <div>
+                <h2 className="text-lg font-bold text-white">Player Statistics</h2>
+                <p className="text-xs text-electric-200">Expanded table, hidden by default on mobile.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPlayerStatsOpen((current) => !current)}
+                className="rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(10,22,44,0.88),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.01))] px-3 py-1.5 text-xs font-semibold text-electric-100"
+              >
+                {isPlayerStatsOpen ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <div className={`${isPlayerStatsOpen ? 'block' : 'hidden'} sm:block`}>
+              <PlayerStatsTable stats={data.playerWeekStats} title="Player Statistics" isOverall={false} />
+            </div>
+          </section>
         ) : null}
 
-        <GamesTable matches={data.matches} />
+        <section className="mb-8">
+          <div className="mb-3 flex items-center justify-between sm:hidden">
+            <div>
+              <h2 className="text-lg font-bold text-white">Matches</h2>
+              <p className="text-xs text-electric-200">{data.matches.length} matches for this play date.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsMatchesOpen((current) => !current)}
+              className="rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(10,22,44,0.88),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.01))] px-3 py-1.5 text-xs font-semibold text-electric-100"
+            >
+              {isMatchesOpen ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          <div className={`${isMatchesOpen ? 'block' : 'hidden'} sm:block`}>
+            <GamesTable matches={data.matches} />
+          </div>
+        </section>
 
-        <div className="mt-12 text-center text-electric-200 text-sm">
+        <div className="mt-8 text-center text-sm text-electric-200 sm:mt-12">
           <p>Powered by TrueSkill Rating System</p>
         </div>
       </div>

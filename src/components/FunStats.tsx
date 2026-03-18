@@ -9,87 +9,113 @@ interface FunStatsProps {
   rivalries: PlayerPair[];
 }
 
-export default function FunStats({ rockstars, closeBuddies, rivalries }: FunStatsProps) {
+function FunStatList({
+  title,
+  subtitle,
+  accentClass,
+  surfaceClass,
+  icon,
+  rows,
+}: {
+  title: string;
+  subtitle: string;
+  accentClass: string;
+  surfaceClass: string;
+  icon: React.ReactNode;
+  rows: Array<{ label: string; value: string }>;
+}) {
   return (
-    <div className="mb-8">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Fun Statistics</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Rockstars */}
-        <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg shadow-md p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <Star className="w-6 h-6 text-yellow-600" />
-            <h3 className="text-lg font-semibold text-gray-800">🌟 Rockstars</h3>
-          </div>
-          <p className="text-sm text-gray-600 mb-3">Most Improved from Week 1</p>
-          <div className="space-y-3">
-            {rockstars.length > 0 ? (
-              rockstars.map((player, idx) => (
-                <div key={player.playerName} className="bg-white rounded p-3">
-                  <div className="font-medium text-gray-800">{idx + 1}. {player.playerName}</div>
-                  <div className="text-sm text-gray-600">
-                    {player.week1Rating.toFixed(1)} → {player.currentRating.toFixed(1)}
-                  </div>
-                  <div className="text-sm font-semibold text-green-600">
-                    +{player.improvement.toFixed(1)} points
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-gray-500 text-sm">No data available</p>
-            )}
-          </div>
-        </div>
-
-        {/* Close Buddies */}
-        <div className="bg-gradient-to-br from-pink-50 to-pink-100 rounded-lg shadow-md p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <Heart className="w-6 h-6 text-pink-600" />
-            <h3 className="text-lg font-semibold text-gray-800">👥 Close Buddies</h3>
-          </div>
-          <p className="text-sm text-gray-600 mb-3">Most Matches as Teammates</p>
-          <div className="space-y-3">
-            {closeBuddies.length > 0 ? (
-              closeBuddies.map((pair, idx) => (
-                <div key={`${pair.player1}-${pair.player2}`} className="bg-white rounded p-3">
-                  <div className="font-medium text-gray-800">
-                    {idx + 1}. {pair.player1} & {pair.player2}
-                  </div>
-                  <div className="text-sm text-pink-600 font-semibold">
-                    {pair.count} matches together
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-gray-500 text-sm">No data available</p>
-            )}
-          </div>
-        </div>
-
-        {/* Rivalries */}
-        <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg shadow-md p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <Swords className="w-6 h-6 text-red-600" />
-            <h3 className="text-lg font-semibold text-gray-800">⚔️ Rivalries</h3>
-          </div>
-          <p className="text-sm text-gray-600 mb-3">Most Played Against</p>
-          <div className="space-y-3">
-            {rivalries.length > 0 ? (
-              rivalries.map((pair, idx) => (
-                <div key={`${pair.player1}-${pair.player2}`} className="bg-white rounded p-3">
-                  <div className="font-medium text-gray-800">
-                    {idx + 1}. {pair.player1} vs {pair.player2}
-                  </div>
-                  <div className="text-sm text-red-600 font-semibold">
-                    {pair.count} matches
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-gray-500 text-sm">No data available</p>
-            )}
-          </div>
+    <article
+      className={`rounded-[10px] border-0 border-[#1b1b1b] p-3.5 shadow-[0_14px_32px_rgba(0,0,0,0.28)] backdrop-blur-[10px] ${surfaceClass}`}
+    >
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${accentClass}`}>{icon}</span>
+        <div>
+          <h3 className="text-sm font-semibold text-white">{title}</h3>
+          <p className="text-[11px] text-electric-200/80">{subtitle}</p>
         </div>
       </div>
-    </div>
+
+      <div className="space-y-1.5">
+        {rows.length > 0 ? (
+          rows.map((row, index) => (
+            <div
+              key={`${title}-${row.label}-${index}`}
+              className="flex items-center justify-between gap-3 border-b border-white/8 pb-1.5 last:border-b-0 last:pb-0"
+            >
+              <p className="truncate text-xs text-electric-100">
+                <span className="mr-1 text-electric-300">{index + 1}.</span>
+                {row.label}
+              </p>
+              <p
+                className={`shrink-0 text-xs font-semibold ${
+                  accentClass.includes('yellow')
+                    ? 'text-yellow-300'
+                    : accentClass.includes('pink')
+                      ? 'text-pink-300'
+                      : 'text-red-300'
+                }`}
+              >
+                {row.value}
+              </p>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-electric-200/70">No data available</p>
+        )}
+      </div>
+    </article>
+  );
+}
+
+export default function FunStats({ rockstars, closeBuddies, rivalries }: FunStatsProps) {
+  const rockstarRows = rockstars.slice(0, 3).map((player) => ({
+    label: player.playerName,
+    value: `+${player.improvement.toFixed(1)}`,
+  }));
+
+  const buddyRows = closeBuddies.slice(0, 3).map((pair) => ({
+    label: `${pair.player1} & ${pair.player2}`,
+    value: `${pair.count} together`,
+  }));
+
+  const rivalryRows = rivalries.slice(0, 3).map((pair) => ({
+    label: `${pair.player1} vs ${pair.player2}`,
+    value: `${pair.count} matches`,
+  }));
+
+  return (
+    <section className="mb-6">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.22em] text-electric-200">Fun Statistics</h2>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <FunStatList
+          title="Rockstars"
+          subtitle="Most improved"
+          accentClass="bg-yellow-400/15 text-yellow-300"
+          surfaceClass="bg-[linear-gradient(180deg,rgba(10,22,44,0.9),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.01)),linear-gradient(135deg,rgba(250,204,21,0.10),rgba(250,204,21,0.02))]"
+          icon={<Star className="h-4 w-4" />}
+          rows={rockstarRows}
+        />
+        <FunStatList
+          title="Close Buddies"
+          subtitle="Best teammate volume"
+          accentClass="bg-pink-400/15 text-pink-300"
+          surfaceClass="bg-[linear-gradient(180deg,rgba(10,22,44,0.9),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.01)),linear-gradient(135deg,rgba(244,114,182,0.10),rgba(244,114,182,0.02))]"
+          icon={<Heart className="h-4 w-4" />}
+          rows={buddyRows}
+        />
+        <FunStatList
+          title="Rivalries"
+          subtitle="Most repeated matchups"
+          accentClass="bg-red-400/15 text-red-300"
+          surfaceClass="bg-[linear-gradient(180deg,rgba(10,22,44,0.9),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.01)),linear-gradient(135deg,rgba(248,113,113,0.10),rgba(248,113,113,0.02))]"
+          icon={<Swords className="h-4 w-4" />}
+          rows={rivalryRows}
+        />
+      </div>
+    </section>
   );
 }

@@ -19,11 +19,11 @@ export default function DateNavigation({
   onDateChange,
 }: DateNavigationProps) {
   return (
-    <div className="flex items-center justify-center gap-4 py-6">
+    <div className="flex items-center justify-center gap-2 py-4 sm:gap-4 sm:py-6">
       <button
         onClick={() => previousDate && onDateChange(previousDate)}
         disabled={!previousDate}
-        className="p-2 rounded-full bg-white hover:bg-electric-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-md"
+        className="rounded-full bg-white p-2 shadow-md transition-all hover:bg-electric-100 disabled:cursor-not-allowed disabled:opacity-30"
         aria-label="Previous play date"
       >
         <ChevronLeft className="w-6 h-6 text-electric-700" />
@@ -32,7 +32,7 @@ export default function DateNavigation({
       <select
         value={selectedDate}
         onChange={(event) => onDateChange(event.target.value)}
-        className="px-6 py-3 text-xl font-bold bg-white text-electric-800 rounded-lg shadow-md hover:shadow-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-coral-500"
+        className="cursor-pointer rounded-lg bg-white px-3 py-2 text-base font-bold text-electric-800 shadow-md transition-all hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-coral-500 sm:px-6 sm:py-3 sm:text-xl"
       >
         {playDates.map((playDate) => (
           <option key={playDate.id} value={playDate.date}>
@@ -44,7 +44,7 @@ export default function DateNavigation({
       <button
         onClick={() => nextDate && onDateChange(nextDate)}
         disabled={!nextDate}
-        className="p-2 rounded-full bg-white hover:bg-electric-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-md"
+        className="rounded-full bg-white p-2 shadow-md transition-all hover:bg-electric-100 disabled:cursor-not-allowed disabled:opacity-30"
         aria-label="Next play date"
       >
         <ChevronRight className="w-6 h-6 text-electric-700" />
