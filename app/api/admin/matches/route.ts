@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/lib/auth/adminSession';
 import { getErrorMessage } from '@/lib/errors';
-import { createMatch, listAdminMatches } from '@/lib/repositories/matches';
+import { createMatch, listAdminMatchDates, listAdminMatches } from '@/lib/repositories/matches';
 import { validateMatchInput } from '@/lib/validation/matches';
 
 export async function GET(request: NextRequest) {
@@ -17,8 +17,13 @@ export async function GET(request: NextRequest) {
     const offset = Number.isNaN(offsetParam) ? 0 : Math.max(offsetParam, 0);
     const search = searchParams.get('search')?.trim() || undefined;
     const status = searchParams.get('status')?.trim() || undefined;
+    const playDate = searchParams.get('playDate')?.trim() || undefined;
+    const includeDates = searchParams.get('includeDates') === 'true';
 
-    const result = await listAdminMatches({ limit, offset, search, status });
+    const [result, matchDates] = await Promise.all([
+      listAdminMatches({ limit, offset, search, status, playDate }),
+      includeDates ? listAdminMatchDates() : Promise.resolve(null),
+    ]);
 
     return NextResponse.json({
       success: true,
@@ -27,6 +32,7 @@ export async function GET(request: NextRequest) {
         total: result.total,
         limit,
         offset,
+        matchDates,
       },
     });
   } catch (error) {

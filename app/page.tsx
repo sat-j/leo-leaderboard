@@ -158,6 +158,12 @@ export default function Home() {
           onDateChange={(date) => fetchLeaderboardData(date)}
         />
 
+        <div className="mb-4 text-center sm:mb-6">
+          <p className="text-sm font-medium text-electric-100">
+            # {data.matches.length} {data.matches.length === 1 ? 'match' : 'matches'} on this date
+          </p>
+        </div>
+
         <StatsGrid weekStats={data.weekStats} />
 
         <LevelLeaderboards levelLeaderboards={data.levelLeaderboards} />

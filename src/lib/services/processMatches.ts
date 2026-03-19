@@ -43,52 +43,63 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
-function normalizeMatchRows(rows: Awaited<ReturnType<typeof listMatchesForProcessing>>): ProcessingMatch[] {
-  return rows
-    .map((row) => {
-      const playDateRow = Array.isArray(row.play_dates) ? row.play_dates[0] : row.play_dates;
-      const participants = (row.match_participants ?? [])
-        .map((participant) => {
-          const playerRow = Array.isArray(participant.players) ? participant.players[0] : participant.players;
-          if (!playerRow) {
-            return null;
-          }
+function normalizeMatchRows(rows: Awaited<ReturnType<typeof listMatchesForProcessing>>) {
+  const warnings: string[] = [];
+  const matches: ProcessingMatch[] = [];
 
-          return {
-            teamNumber: participant.team_number,
-            seatNumber: participant.seat_number,
-            player: {
-              id: playerRow.id,
-              displayName: playerRow.display_name,
-              level: playerRow.level,
-              initialMu: Number(playerRow.initial_mu),
-              initialSigma: Number(playerRow.initial_sigma),
-            },
-          };
-        })
-        .filter((participant): participant is ProcessingParticipant => participant !== null)
-        .sort((left, right) => {
-          if (left.teamNumber !== right.teamNumber) {
-            return left.teamNumber - right.teamNumber;
-          }
-          return left.seatNumber - right.seatNumber;
-        });
+  for (const row of rows) {
+    const playDateRow = Array.isArray(row.play_dates) ? row.play_dates[0] : row.play_dates;
+    const participants = (row.match_participants ?? [])
+      .map((participant) => {
+        const playerRow = Array.isArray(participant.players) ? participant.players[0] : participant.players;
+        if (!playerRow) {
+          return null;
+        }
 
-      if (!playDateRow || participants.length !== 4) {
-        return null;
-      }
+        return {
+          teamNumber: participant.team_number,
+          seatNumber: participant.seat_number,
+          player: {
+            id: playerRow.id,
+            displayName: playerRow.display_name,
+            level: playerRow.level,
+            initialMu: Number(playerRow.initial_mu),
+            initialSigma: Number(playerRow.initial_sigma),
+          },
+        };
+      })
+      .filter((participant): participant is ProcessingParticipant => participant !== null)
+      .sort((left, right) => {
+        if (left.teamNumber !== right.teamNumber) {
+          return left.teamNumber - right.teamNumber;
+        }
+        return left.seatNumber - right.seatNumber;
+      });
 
-      return {
-        id: row.id,
-        playedAt: row.played_at,
-        playDateId: playDateRow.id,
-        playDate: playDateRow.play_date,
-        score1: row.score1,
-        score2: row.score2,
-        participants,
-      };
-    })
-    .filter((match): match is ProcessingMatch => match !== null);
+    if (!playDateRow) {
+      warnings.push(`Skipped match ${row.id}: missing play date relation.`);
+      continue;
+    }
+
+    if (participants.length !== 4) {
+      warnings.push(
+        `Skipped match ${row.id}: expected 4 participants, found ${participants.length}.`
+      );
+      continue;
+    }
+
+    matches.push({
+      id: row.id,
+      playedAt: row.played_at,
+      playDateId: playDateRow.id,
+      playDate: playDateRow.play_date,
+      score1: row.score1,
+      score2: row.score2,
+      participants,
+    });
+  }
+
+  return { matches, warnings };
 }
 
 function skillRating(rating: Rating) {
@@ -103,11 +114,12 @@ export async function rebuildAllProcessedData(processingRunId: string): Promise<
   } catch (error) {
     throw new Error(`Failed loading raw matches: ${getErrorMessage(error)}`);
   }
-  const matches = normalizeMatchRows(rawMatches);
+  const normalized = normalizeMatchRows(rawMatches);
+  const matches = normalized.matches;
 
   const ratings = new Map<string, Rating>();
   const playerMeta = new Map<string, ProcessingPlayer>();
-  const warnings: string[] = [];
+  const warnings: string[] = [...normalized.warnings];
 
   for (const match of matches) {
     for (const participant of match.participants) {

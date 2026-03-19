@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 
 interface AdminMatch {
   id: string;
@@ -52,7 +52,14 @@ interface EditablePlayerState {
   isActive: boolean;
 }
 
+interface MatchDateOption {
+  playDate: string;
+  labelShort: string;
+  matchCount: number;
+}
+
 const MATCH_PAGE_SIZE = 20;
+const CLUB_TIME_ZONE = process.env.NEXT_PUBLIC_CLUB_TIME_ZONE || 'America/Toronto';
 
 function toLocalDatetimeInputValue(isoTimestamp: string): string {
   const date = new Date(isoTimestamp);
@@ -70,6 +77,14 @@ function formatTimestamp(value: string | null): string {
   }
 
   return new Date(value).toLocaleString();
+}
+
+function formatMatchTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: CLUB_TIME_ZONE,
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value));
 }
 
 function summarizeRun(run: ProcessingRun): string {
@@ -110,6 +125,81 @@ function isPlayerTakenInMatch(
   );
 }
 
+function buildEditableMatchState(match: AdminMatch): EditableMatchState {
+  return {
+    score1: String(match.score1),
+    score2: String(match.score2),
+    playedAtLocal: toLocalDatetimeInputValue(match.playedAt),
+    status: match.status,
+    participantIds: createParticipantIdMap(match),
+  };
+}
+
+function getMatchStatusTheme(status: string) {
+  switch (status.toLowerCase()) {
+    case 'processed':
+      return {
+        row: 'bg-emerald-950/70 text-emerald-50 border border-emerald-500/20',
+        dot: 'bg-emerald-400',
+        label: 'text-emerald-100',
+      };
+    case 'validated':
+      return {
+        row: 'bg-cyan-950/70 text-cyan-50 border border-cyan-500/20',
+        dot: 'bg-cyan-400',
+        label: 'text-cyan-100',
+      };
+    case 'pending':
+      return {
+        row: 'bg-amber-950/70 text-amber-50 border border-amber-500/20',
+        dot: 'bg-amber-400',
+        label: 'text-amber-100',
+      };
+    case 'rejected':
+      return {
+        row: 'bg-rose-950/70 text-rose-50 border border-rose-500/20',
+        dot: 'bg-rose-400',
+        label: 'text-rose-100',
+      };
+    default:
+      return {
+        row: 'bg-slate-900/80 text-slate-100 border border-slate-800',
+        dot: 'bg-slate-400',
+        label: 'text-slate-100',
+      };
+  }
+}
+
+function parsePlayDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, (month ?? 1) - 1, day ?? 1);
+}
+
+function formatPlayDateHeading(value: string | null) {
+  if (!value) {
+    return 'Choose a match date';
+  }
+
+  return parsePlayDate(value).toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function getMonthKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function startOfCalendarMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function shiftMonth(date: Date, delta: number) {
+  return new Date(date.getFullYear(), date.getMonth() + delta, 1);
+}
+
 export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -136,11 +226,20 @@ export default function AdminPage() {
   const [matchPage, setMatchPage] = useState(1);
   const [isPlayersOpen, setIsPlayersOpen] = useState(false);
   const [isRebuildHistoryOpen, setIsRebuildHistoryOpen] = useState(false);
+  const [isDateBrowserOpen, setIsDateBrowserOpen] = useState(false);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
+  const [isLoadingDateMatches, setIsLoadingDateMatches] = useState(false);
+  const [isLoadingMatchDates, setIsLoadingMatchDates] = useState(false);
   const [playerSearch, setPlayerSearch] = useState('');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerLevel, setNewPlayerLevel] = useState<'INT' | 'PLUS' | 'ADV'>('INT');
   const [needsRebuild, setNeedsRebuild] = useState(false);
+  const [matchDates, setMatchDates] = useState<MatchDateOption[]>([]);
+  const [selectedMatchDate, setSelectedMatchDate] = useState<string | null>(null);
+  const [dateMatches, setDateMatches] = useState<AdminMatch[]>([]);
+  const [dateMatchSearch, setDateMatchSearch] = useState('');
+  const [expandedDateMatchId, setExpandedDateMatchId] = useState<string | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
 
   const loadMatches = async (page: number, search: string, statusFilter: string) => {
     const offset = (page - 1) * MATCH_PAGE_SIZE;
@@ -175,18 +274,84 @@ export default function AdminPage() {
       Object.fromEntries(
         nextMatches.map((match) => [
           match.id,
-          {
-            score1: String(match.score1),
-            score2: String(match.score2),
-            playedAtLocal: toLocalDatetimeInputValue(match.playedAt),
-            status: match.status,
-            participantIds: createParticipantIdMap(match),
-          },
+          buildEditableMatchState(match),
         ])
       )
     );
 
     return true;
+  };
+
+  const loadMatchDates = async () => {
+    setIsLoadingMatchDates(true);
+
+    try {
+      const response = await fetch('/api/admin/matches?includeDates=true&limit=1', {
+        credentials: 'include',
+      });
+
+      if (response.status === 401) {
+        setIsAuthenticated(false);
+        return false;
+      }
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || 'Failed to load match dates');
+      }
+
+      const nextMatchDates = (result.data.matchDates as MatchDateOption[] | null) ?? [];
+      setMatchDates(nextMatchDates);
+
+      if (nextMatchDates.length > 0) {
+        const nextSelectedDate = selectedMatchDate && nextMatchDates.some((item) => item.playDate === selectedMatchDate)
+          ? selectedMatchDate
+          : nextMatchDates[0].playDate;
+
+        setSelectedMatchDate(nextSelectedDate);
+        setCalendarMonth(startOfCalendarMonth(parsePlayDate(nextSelectedDate)));
+      } else {
+        setSelectedMatchDate(null);
+      }
+
+      return true;
+    } finally {
+      setIsLoadingMatchDates(false);
+    }
+  };
+
+  const loadMatchesForDate = async (playDate: string) => {
+    setIsLoadingDateMatches(true);
+
+    try {
+      const query = new URLSearchParams({ playDate });
+      const response = await fetch(`/api/admin/matches?${query.toString()}`, {
+        credentials: 'include',
+      });
+
+      if (response.status === 401) {
+        setIsAuthenticated(false);
+        return false;
+      }
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || 'Failed to load matches for date');
+      }
+
+      const nextMatches = result.data.matches as AdminMatch[];
+      setDateMatches(nextMatches);
+      setEditState((current) => ({
+        ...current,
+        ...Object.fromEntries(
+          nextMatches.map((match) => [match.id, buildEditableMatchState(match)])
+        ),
+      }));
+      setExpandedDateMatchId(null);
+      return true;
+    } finally {
+      setIsLoadingDateMatches(false);
+    }
   };
 
   const loadPlayers = async () => {
@@ -267,11 +432,12 @@ export default function AdminPage() {
         throw new Error(runsResult.error?.message || 'Failed to load processing runs');
       }
 
-      const [matchesLoaded, optionsLoaded] = await Promise.all([
+      const [matchesLoaded, optionsLoaded, matchDatesLoaded] = await Promise.all([
         loadMatches(matchPage, matchSearch, matchStatusFilter),
         loadMatchPlayerOptions(),
+        loadMatchDates(),
       ]);
-      if (!matchesLoaded || !optionsLoaded) {
+      if (!matchesLoaded || !optionsLoaded || !matchDatesLoaded) {
         return;
       }
 
@@ -325,6 +491,22 @@ export default function AdminPage() {
 
     refreshPlayers();
   }, [isAuthenticated, isPlayersOpen, playerSearch]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !isDateBrowserOpen || !selectedMatchDate) {
+      return;
+    }
+
+    const refreshDateMatches = async () => {
+      try {
+        await loadMatchesForDate(selectedMatchDate);
+      } catch (error) {
+        setPageError(error instanceof Error ? error.message : 'Failed to load matches for selected date');
+      }
+    };
+
+    refreshDateMatches();
+  }, [isAuthenticated, isDateBrowserOpen, selectedMatchDate]);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -450,6 +632,12 @@ export default function AdminPage() {
           score2: Number.parseInt(current.score2, 10),
           playedAt: toIsoFromLocalDatetime(current.playedAtLocal),
           status: current.status,
+          players: [
+            { playerId: current.participantIds['1-1'], team: 1, seat: 1 },
+            { playerId: current.participantIds['1-2'], team: 1, seat: 2 },
+            { playerId: current.participantIds['2-1'], team: 2, seat: 1 },
+            { playerId: current.participantIds['2-2'], team: 2, seat: 2 },
+          ],
         }),
       });
 
@@ -461,6 +649,10 @@ export default function AdminPage() {
       setPageError('Match updated. Run rebuild when you are ready to refresh public stats.');
       setNeedsRebuild(true);
       await loadMatches(matchPage, matchSearch, matchStatusFilter);
+      await loadMatchDates();
+      if (selectedMatchDate && isDateBrowserOpen) {
+        await loadMatchesForDate(selectedMatchDate);
+      }
     } catch (error) {
       setPageError(error instanceof Error ? error.message : 'Failed to update match');
     } finally {
@@ -494,6 +686,10 @@ export default function AdminPage() {
         setMatchPage((current) => current - 1);
       } else {
         await loadMatches(matchPage, matchSearch, matchStatusFilter);
+      }
+      await loadMatchDates();
+      if (selectedMatchDate && isDateBrowserOpen) {
+        await loadMatchesForDate(selectedMatchDate);
       }
     } catch (error) {
       setPageError(error instanceof Error ? error.message : 'Failed to delete match');
@@ -549,6 +745,14 @@ export default function AdminPage() {
     }
   };
 
+  const handleCancelDateMatchEdit = (match: AdminMatch) => {
+    setEditState((current) => ({
+      ...current,
+      [match.id]: buildEditableMatchState(match),
+    }));
+    setExpandedDateMatchId(null);
+  };
+
   const handleCreatePlayer = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setActivePlayerId('new-player');
@@ -584,6 +788,59 @@ export default function AdminPage() {
       setActivePlayerId(null);
     }
   };
+
+  const totalMatchPages = Math.max(1, Math.ceil(matchTotal / MATCH_PAGE_SIZE));
+  const enabledMatchDateSet = useMemo(
+    () => new Set(matchDates.map((item) => item.playDate)),
+    [matchDates]
+  );
+  const visibleDateMatches = useMemo(() => {
+    const query = dateMatchSearch.trim().toLowerCase();
+    if (!query) {
+      return dateMatches;
+    }
+
+    return dateMatches.filter((match) => {
+      const haystack = [
+        ...match.team1,
+        ...match.team2,
+        match.status,
+        match.playDate ?? '',
+        `${match.score1}-${match.score2}`,
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [dateMatchSearch, dateMatches]);
+  const monthStart = startOfCalendarMonth(calendarMonth);
+  const monthLabel = monthStart.toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric',
+  });
+  const monthStartOffset = monthStart.getDay();
+  const monthDays = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+  const calendarCells = Array.from({ length: monthStartOffset + monthDays }, (_, index) => {
+    if (index < monthStartOffset) {
+      return null;
+    }
+
+    const day = index - monthStartOffset + 1;
+    const cellDate = new Date(monthStart.getFullYear(), monthStart.getMonth(), day);
+    const playDate = [
+      cellDate.getFullYear(),
+      String(cellDate.getMonth() + 1).padStart(2, '0'),
+      String(cellDate.getDate()).padStart(2, '0'),
+    ].join('-');
+
+    return {
+      day,
+      playDate,
+      enabled: enabledMatchDateSet.has(playDate),
+      selected: selectedMatchDate === playDate,
+    };
+  });
 
   if (isCheckingSession) {
     return (
@@ -633,8 +890,6 @@ export default function AdminPage() {
       </main>
     );
   }
-
-  const totalMatchPages = Math.max(1, Math.ceil(matchTotal / MATCH_PAGE_SIZE));
 
   return (
     <main className="min-h-screen bg-slate-950 px-3 py-6 text-white sm:px-4 sm:py-10">
@@ -782,6 +1037,320 @@ export default function AdminPage() {
                     </article>
                   );
                 })}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 sm:p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Matches By Day</h2>
+              <p className="mt-2 text-sm text-slate-300">
+                Open this when you need all matches for one date, with search and row-level editing.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsDateBrowserOpen((current) => !current)}
+              className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800"
+            >
+              {isDateBrowserOpen ? 'Hide Date Browser' : 'Open Date Browser'}
+            </button>
+          </div>
+
+          {isDateBrowserOpen ? (
+            <div className="mt-6 space-y-4">
+              <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="mb-4 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCalendarMonth((current) => shiftMonth(current, -1))}
+                      className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-100 transition hover:bg-slate-800"
+                    >
+                      Prev
+                    </button>
+                    <div className="text-sm font-semibold text-white">{monthLabel}</div>
+                    <button
+                      type="button"
+                      onClick={() => setCalendarMonth((current) => shiftMonth(current, 1))}
+                      className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-100 transition hover:bg-slate-800"
+                    >
+                      Next
+                    </button>
+                  </div>
+
+                  <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                      <div key={day}>{day}</div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1">
+                    {calendarCells.map((cell, index) =>
+                      cell ? (
+                        <button
+                          key={cell.playDate}
+                          type="button"
+                          disabled={!cell.enabled}
+                          onClick={() => setSelectedMatchDate(cell.playDate)}
+                          className={`aspect-square rounded-lg border text-sm transition ${
+                            cell.selected
+                              ? 'border-cyan-400 bg-cyan-400/20 text-cyan-100'
+                              : cell.enabled
+                                ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800'
+                                : 'border-slate-900 bg-slate-950/60 text-slate-600'
+                          }`}
+                        >
+                          {cell.day}
+                        </button>
+                      ) : (
+                        <div key={`empty-${index}`} />
+                      )
+                    )}
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+                    {isLoadingMatchDates
+                      ? 'Loading available dates...'
+                      : `${matchDates.length} match dates available`}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">{formatPlayDateHeading(selectedMatchDate)}</h3>
+                      <p className="mt-1 text-sm text-slate-400">
+                        {selectedMatchDate ? `${visibleDateMatches.length} match rows ready for review` : 'Pick an enabled date to review matches.'}
+                      </p>
+                    </div>
+                    <div className="flex w-full max-w-xl flex-col gap-2 sm:flex-row">
+                      <input
+                        type="text"
+                        value={dateMatchSearch}
+                        onChange={(event) => setDateMatchSearch(event.target.value)}
+                        placeholder="Search player, score, or status"
+                        className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => selectedMatchDate && loadMatchesForDate(selectedMatchDate)}
+                        disabled={!selectedMatchDate || isLoadingDateMatches}
+                        className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        {isLoadingDateMatches ? 'Refreshing...' : 'Refresh'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 overflow-x-auto">
+                    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-300">
+                      <span className="font-medium text-slate-100">Legend</span>
+                      {[
+                        ['processed', 'Processed'],
+                        ['validated', 'Validated'],
+                        ['pending', 'Pending'],
+                        ['rejected', 'Rejected'],
+                      ].map(([code, label]) => {
+                        const theme = getMatchStatusTheme(code);
+                        return (
+                          <span key={code} className="inline-flex items-center gap-2">
+                            <span className={`h-2.5 w-2.5 rounded-full ${theme.dot}`} />
+                            <span>{label}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <table className="min-w-full border-separate border-spacing-y-2 text-sm">
+                      <thead>
+                        <tr className="text-left text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                          <th className="px-3 py-2">Edit</th>
+                          <th className="px-3 py-2">Time</th>
+                          <th className="px-3 py-2">Team 1</th>
+                          <th className="px-3 py-2">Score</th>
+                          <th className="px-3 py-2">Team 2</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleDateMatches.map((match) => {
+                          const formState = editState[match.id];
+                          if (!formState) {
+                            return null;
+                          }
+
+                          const isExpanded = expandedDateMatchId === match.id;
+                          const theme = getMatchStatusTheme(formState.status || match.status);
+                          return (
+                            <Fragment key={match.id}>
+                              <tr key={match.id} className={theme.row}>
+                                <td className="rounded-l-xl px-3 py-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedDateMatchId((current) => (current === match.id ? null : match.id))}
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-slate-950/70 text-white transition hover:bg-slate-800"
+                                    aria-label={`Edit match ${match.id}`}
+                                    title="Edit match"
+                                  >
+                                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.8">
+                                      <path d="M4 20h4l10-10-4-4L4 16v4Z" />
+                                      <path d="m12 6 4 4" />
+                                    </svg>
+                                  </button>
+                                </td>
+                                <td className="px-3 py-3">{formatMatchTime(match.playedAt)}</td>
+                                <td className="px-3 py-3">{match.team1.join(' / ')}</td>
+                                <td className="px-3 py-3 font-semibold">{match.score1} - {match.score2}</td>
+                                <td className="rounded-r-xl px-3 py-3">{match.team2.join(' / ')}</td>
+                              </tr>
+                              {isExpanded ? (
+                                <tr>
+                                  <td colSpan={5} className="px-0 pb-2">
+                                    <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3">
+                                      <div className="grid gap-3 xl:grid-cols-[1.35fr_0.95fr_auto] xl:items-end">
+                                        <div className="grid gap-3 sm:grid-cols-2">
+                                          <div>
+                                            <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-300">Team 1</p>
+                                            <div className="mt-1 grid gap-1.5">
+                                              {[1, 2].map((seat) => (
+                                                <select
+                                                  key={`date-team1-${match.id}-${seat}`}
+                                                  value={formState.participantIds[`1-${seat}`] ?? ''}
+                                                  onChange={(event) => updateMatchParticipant(match.id, 1, seat, event.target.value)}
+                                                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-white outline-none transition focus:border-emerald-400"
+                                                >
+                                                  <option value="">Select player</option>
+                                                  {matchPlayerOptions.map((player) => (
+                                                    <option
+                                                      key={player.id}
+                                                      value={player.id}
+                                                      disabled={isPlayerTakenInMatch(formState.participantIds, `1-${seat}`, player.id)}
+                                                    >
+                                                      {player.displayName}
+                                                    </option>
+                                                  ))}
+                                                </select>
+                                              ))}
+                                            </div>
+                                          </div>
+                                          <div>
+                                            <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-300">Team 2</p>
+                                            <div className="mt-1 grid gap-1.5">
+                                              {[1, 2].map((seat) => (
+                                                <select
+                                                  key={`date-team2-${match.id}-${seat}`}
+                                                  value={formState.participantIds[`2-${seat}`] ?? ''}
+                                                  onChange={(event) => updateMatchParticipant(match.id, 2, seat, event.target.value)}
+                                                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-white outline-none transition focus:border-cyan-400"
+                                                >
+                                                  <option value="">Select player</option>
+                                                  {matchPlayerOptions.map((player) => (
+                                                    <option
+                                                      key={player.id}
+                                                      value={player.id}
+                                                      disabled={isPlayerTakenInMatch(formState.participantIds, `2-${seat}`, player.id)}
+                                                    >
+                                                      {player.displayName}
+                                                    </option>
+                                                  ))}
+                                                </select>
+                                              ))}
+                                            </div>
+                                          </div>
+                                          <div>
+                                            <label className="mb-1 block text-[11px] uppercase tracking-[0.18em] text-slate-400">Played At</label>
+                                            <input
+                                              type="datetime-local"
+                                              value={formState.playedAtLocal}
+                                              onChange={(event) => updateField(match.id, 'playedAtLocal', event.target.value)}
+                                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-2.5 py-2 text-sm text-white outline-none transition focus:border-emerald-400"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="mb-1 block text-[11px] uppercase tracking-[0.18em] text-slate-400">Status</label>
+                                            <select
+                                              value={formState.status}
+                                              onChange={(event) => updateField(match.id, 'status', event.target.value)}
+                                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-2.5 py-2 text-sm text-white outline-none transition focus:border-emerald-400"
+                                            >
+                                              <option value="pending">pending</option>
+                                              <option value="validated">validated</option>
+                                              <option value="processed">processed</option>
+                                              <option value="rejected">rejected</option>
+                                            </select>
+                                          </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2 sm:max-w-xs">
+                                          <div>
+                                            <label className="mb-1 block text-[11px] uppercase tracking-[0.18em] text-slate-400">Score 1</label>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={formState.score1}
+                                              onChange={(event) => updateField(match.id, 'score1', event.target.value)}
+                                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-2.5 py-2 text-center text-base font-semibold text-white outline-none transition focus:border-emerald-400"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="mb-1 block text-[11px] uppercase tracking-[0.18em] text-slate-400">Score 2</label>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={formState.score2}
+                                              onChange={(event) => updateField(match.id, 'score2', event.target.value)}
+                                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-2.5 py-2 text-center text-base font-semibold text-white outline-none transition focus:border-emerald-400"
+                                            />
+                                          </div>
+                                          <p className="col-span-2 text-[11px] text-slate-400">{match.playDate ? `Play date: ${match.playDate}` : 'Play date not assigned'}</p>
+                                        </div>
+
+                                        <div className="flex gap-2 xl:flex-col">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleSaveMatch(match.id)}
+                                            disabled={activeMatchId === match.id}
+                                            className="flex-1 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleCancelDateMatchEdit(match)}
+                                            disabled={activeMatchId === match.id}
+                                            className="flex-1 rounded-xl border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+                                          >
+                                            Cancel
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteMatch(match.id)}
+                                            disabled={activeMatchId === match.id}
+                                            className="flex-1 rounded-xl border border-rose-500/40 px-3 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-70"
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ) : null}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {!selectedMatchDate ? (
+                    <p className="mt-4 text-sm text-slate-400">Select any enabled date on the calendar to view its matches.</p>
+                  ) : null}
+                  {selectedMatchDate && !isLoadingDateMatches && visibleDateMatches.length === 0 ? (
+                    <p className="mt-4 text-sm text-slate-400">No matches found for that date/search combination.</p>
+                  ) : null}
+                </div>
               </div>
             </div>
           ) : null}

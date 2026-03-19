@@ -1,11 +1,11 @@
-import { format } from 'date-fns';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { formatClubDateLabel, formatClubDateLongLabel, toClubDateString } from '@/lib/dates';
 import type { MatchInput } from '@/lib/validation/matches';
 
 function buildPlayDateLabels(date: Date) {
   return {
-    short: format(date, 'EEE MMM d'),
-    long: format(date, 'EEEE, MMMM d, yyyy'),
+    short: formatClubDateLabel(date.toISOString()),
+    long: formatClubDateLongLabel(date.toISOString()),
   };
 }
 
@@ -26,7 +26,7 @@ async function ensurePlayersExist(playerIds: string[]) {
 async function upsertPlayDateForTimestamp(playedAt: string) {
   const supabase = createSupabaseAdminClient();
   const playedAtDate = new Date(playedAt);
-  const playDate = format(playedAtDate, 'yyyy-MM-dd');
+  const playDate = toClubDateString(playedAt);
   const labels = buildPlayDateLabels(playedAtDate);
 
   const { data: playDateRow, error } = await supabase
@@ -72,8 +72,7 @@ async function refreshPlayDateMatchCount(playDateId: string) {
 
 export async function createMatch(input: MatchInput) {
   const supabase = createSupabaseAdminClient();
-  const playedAtDate = new Date(input.playedAt);
-  const playDate = format(playedAtDate, 'yyyy-MM-dd');
+  const playDate = toClubDateString(input.playedAt);
 
   const missingPlayerIds = await ensurePlayersExist(input.players.map((player) => player.playerId));
   if (missingPlayerIds.length > 0) {
@@ -186,17 +185,89 @@ function flattenAdminMatch(row: Awaited<ReturnType<typeof listRecentMatches>>[nu
   };
 }
 
+async function listMatchesByPlayDate(playDate: string) {
+  const supabase = createSupabaseAdminClient();
+  const { data: playDateRow, error: playDateError } = await supabase
+    .from('play_dates')
+    .select('id')
+    .eq('play_date', playDate)
+    .single();
+
+  if (playDateError) {
+    throw playDateError;
+  }
+
+  if (!playDateRow) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('matches')
+    .select(
+      `
+        id,
+        played_at,
+        score1,
+        score2,
+        status,
+        play_dates ( play_date, label_short ),
+        match_participants (
+          team_number,
+          seat_number,
+          players ( id, display_name )
+        )
+      `
+    )
+    .eq('play_date_id', playDateRow.id)
+    .order('played_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
 export async function listAdminMatches(options: {
   limit?: number;
   offset?: number;
   search?: string;
   status?: string;
+  playDate?: string;
 } = {}) {
   const supabase = createSupabaseAdminClient();
   const limit = Math.min(Math.max(options.limit ?? 25, 1), 100);
   const offset = Math.max(options.offset ?? 0, 0);
   const search = options.search?.trim().toLowerCase();
   const status = options.status?.trim().toLowerCase();
+  const playDate = options.playDate?.trim();
+
+  if (playDate) {
+    const rows = await listMatchesByPlayDate(playDate);
+    const flattened = rows.map(flattenAdminMatch);
+    const filtered = flattened.filter((match) => {
+      if (status && match.status.toLowerCase() !== status) {
+        return false;
+      }
+
+      const haystack = [
+        ...match.team1,
+        ...match.team2,
+        match.playDate ?? '',
+        match.status,
+        `${match.score1}-${match.score2}`,
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return search ? haystack.includes(search) : true;
+    });
+
+    return {
+      matches: filtered,
+      total: filtered.length,
+    };
+  }
 
   let countQuery = supabase.from('matches').select('id', { count: 'exact', head: true });
   if (status) {
@@ -243,6 +314,73 @@ export async function listAdminMatches(options: {
     matches: filtered.slice(offset, offset + limit),
     total: filtered.length,
   };
+}
+
+export async function listAdminMatchDates() {
+  const supabase = createSupabaseAdminClient();
+  const pageSize = 500;
+  const rows: Array<{
+    play_dates:
+      | {
+          play_date: string;
+          label_short: string | null;
+        }
+      | Array<{
+          play_date: string;
+          label_short: string | null;
+        }>
+      | null;
+  }> = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase
+      .from('matches')
+      .select('play_dates ( play_date, label_short )')
+      .order('played_at', { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      throw error;
+    }
+
+    const batch = data ?? [];
+    rows.push(...(batch as typeof rows));
+
+    if (batch.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
+  }
+
+  const counts = new Map<string, { labelShort: string; matchCount: number }>();
+  for (const row of rows) {
+    const playDateRow = Array.isArray(row.play_dates) ? row.play_dates[0] : row.play_dates;
+    if (!playDateRow?.play_date) {
+      continue;
+    }
+
+    const current = counts.get(playDateRow.play_date);
+    if (current) {
+      current.matchCount += 1;
+      continue;
+    }
+
+    counts.set(playDateRow.play_date, {
+      labelShort: playDateRow.label_short ?? playDateRow.play_date,
+      matchCount: 1,
+    });
+  }
+
+  return Array.from(counts.entries())
+    .map(([playDate, value]) => ({
+      playDate,
+      labelShort: value.labelShort,
+      matchCount: value.matchCount,
+    }))
+    .sort((left, right) => right.playDate.localeCompare(left.playDate));
 }
 
 export async function updateMatch(
@@ -356,29 +494,87 @@ export async function deleteMatch(matchId: string) {
 
 export async function listMatchesForProcessing() {
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
-    .from('matches')
-    .select(
-      `
-        id,
-        played_at,
-        score1,
-        score2,
-        status,
-        play_dates ( id, play_date, label_short, label_long ),
-        match_participants (
-          team_number,
-          seat_number,
-          players ( id, display_name, level, initial_mu, initial_sigma )
-        )
-      `
-    )
-    .in('status', ['pending', 'validated', 'processed'])
-    .order('played_at', { ascending: true });
+  const pageSize = 500;
+  type ProcessingMatchRow = {
+    id: string;
+    played_at: string;
+    score1: number;
+    score2: number;
+    status: string;
+    play_dates:
+      | {
+          id: string;
+          play_date: string;
+          label_short: string | null;
+          label_long: string | null;
+        }
+      | Array<{
+          id: string;
+          play_date: string;
+          label_short: string | null;
+          label_long: string | null;
+        }>
+      | null;
+    match_participants: Array<{
+      team_number: number;
+      seat_number: number;
+      players:
+        | {
+            id: string;
+            display_name: string;
+            level: 'PLUS' | 'INT' | 'ADV';
+            initial_mu: number;
+            initial_sigma: number;
+          }
+        | Array<{
+            id: string;
+            display_name: string;
+            level: 'PLUS' | 'INT' | 'ADV';
+            initial_mu: number;
+            initial_sigma: number;
+          }>
+        | null;
+    }> | null;
+  };
+  const rows: ProcessingMatchRow[] = [];
+  let from = 0;
 
-  if (error) {
-    throw error;
+  while (true) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase
+      .from('matches')
+      .select(
+        `
+          id,
+          played_at,
+          score1,
+          score2,
+          status,
+          play_dates ( id, play_date, label_short, label_long ),
+          match_participants (
+            team_number,
+            seat_number,
+            players ( id, display_name, level, initial_mu, initial_sigma )
+          )
+        `
+      )
+      .in('status', ['pending', 'validated', 'processed'])
+      .order('played_at', { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      throw error;
+    }
+
+    const batch = data ?? [];
+    rows.push(...(batch as ProcessingMatchRow[]));
+
+    if (batch.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
   }
 
-  return data ?? [];
+  return rows;
 }

@@ -1,5 +1,6 @@
 interface AppConfig {
   adminSecret: string | null;
+  clubTimeZone: string;
   supabasePublishableKey: string | null;
   supabaseSecretKey: string | null;
   supabaseUrl: string | null;
@@ -19,6 +20,10 @@ function loadConfig(): AppConfig {
 
   cachedConfig = {
     adminSecret: readEnv('ADMIN_SECRET'),
+    clubTimeZone:
+      readEnv('CLUB_TIME_ZONE') ??
+      readEnv('NEXT_PUBLIC_CLUB_TIME_ZONE') ??
+      'America/Toronto',
     supabasePublishableKey:
       readEnv('SUPABASE_PUBLISHABLE_KEY') ??
       readEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY') ??
@@ -33,6 +38,10 @@ function loadConfig(): AppConfig {
 
 export function getAdminSecret(): string | null {
   return loadConfig().adminSecret;
+}
+
+export function getClubTimeZone(): string {
+  return loadConfig().clubTimeZone;
 }
 
 export function getSupabaseUrl(): string | null {
