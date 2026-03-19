@@ -79,14 +79,6 @@ function formatTimestamp(value: string | null): string {
   return new Date(value).toLocaleString();
 }
 
-function formatMatchTime(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    timeZone: CLUB_TIME_ZONE,
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value));
-}
-
 function summarizeRun(run: ProcessingRun): string {
   const summary = run.summary ?? {};
   const matchesProcessed =
@@ -938,7 +930,7 @@ export default function AdminPage() {
             </ul>
           </div>
         </section>
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 sm:p-6">
+        <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 p-4 sm:p-6">
           <div className="mb-5 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-semibold">Recent Processing Runs</h2>
@@ -1062,7 +1054,7 @@ export default function AdminPage() {
           {isDateBrowserOpen ? (
             <div className="mt-6 space-y-4">
               <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                <div className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
                   <div className="mb-4 flex items-center justify-between gap-2">
                     <button
                       type="button"
@@ -1118,7 +1110,7 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                       <h3 className="text-lg font-semibold text-white">{formatPlayDateHeading(selectedMatchDate)}</h3>
@@ -1145,9 +1137,8 @@ export default function AdminPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 overflow-x-auto">
+                  <div className="mt-4 max-w-full overflow-x-auto">
                     <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-300">
-                      <span className="font-medium text-slate-100">Legend</span>
                       {[
                         ['processed', 'Processed'],
                         ['validated', 'Validated'],
@@ -1163,11 +1154,16 @@ export default function AdminPage() {
                         );
                       })}
                     </div>
-                    <table className="min-w-full border-separate border-spacing-y-2 text-sm">
+                    <table className="w-full table-fixed border-separate border-spacing-y-2 text-sm">
+                      <colgroup>
+                        <col className="w-[72px]" />
+                        <col className="w-[40%]" />
+                        <col className="w-[110px]" />
+                        <col className="w-[40%]" />
+                      </colgroup>
                       <thead>
                         <tr className="text-left text-[11px] uppercase tracking-[0.18em] text-slate-400">
                           <th className="px-3 py-2">Edit</th>
-                          <th className="px-3 py-2">Time</th>
                           <th className="px-3 py-2">Team 1</th>
                           <th className="px-3 py-2">Score</th>
                           <th className="px-3 py-2">Team 2</th>
@@ -1199,14 +1195,13 @@ export default function AdminPage() {
                                     </svg>
                                   </button>
                                 </td>
-                                <td className="px-3 py-3">{formatMatchTime(match.playedAt)}</td>
-                                <td className="px-3 py-3">{match.team1.join(' / ')}</td>
-                                <td className="px-3 py-3 font-semibold">{match.score1} - {match.score2}</td>
-                                <td className="rounded-r-xl px-3 py-3">{match.team2.join(' / ')}</td>
+                                <td className="px-3 py-3 align-top">{match.team1.join(' / ')}</td>
+                                <td className="px-3 py-3 align-top font-semibold">{match.score1} - {match.score2}</td>
+                                <td className="rounded-r-xl px-3 py-3 align-top">{match.team2.join(' / ')}</td>
                               </tr>
                               {isExpanded ? (
                                 <tr>
-                                  <td colSpan={5} className="px-0 pb-2">
+                                  <td colSpan={4} className="px-0 pb-2">
                                     <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3">
                                       <div className="grid gap-3 xl:grid-cols-[1.35fr_0.95fr_auto] xl:items-end">
                                         <div className="grid gap-3 sm:grid-cols-2">
@@ -1487,4 +1482,3 @@ export default function AdminPage() {
     </main>
   );
 }
-
