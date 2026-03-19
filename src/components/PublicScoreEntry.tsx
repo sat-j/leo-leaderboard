@@ -203,6 +203,18 @@ function getTodayDateString() {
   return `${year}-${month}-${day}`;
 }
 
+function getLocalDateString(timestamp: string) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 interface PublicScoreEntryProps {
   mode?: 'page' | 'drawer';
 }
@@ -281,14 +293,19 @@ export default function PublicScoreEntry({ mode = 'page' }: PublicScoreEntryProp
     try {
       setLoadingRecentMatches(true);
       const today = getTodayDateString();
-      const response = await fetch(`/api/public/matches/recent?date=${today}&limit=100`);
+      const response = await fetch('/api/public/matches/recent?limit=250');
       const result = await response.json();
 
       if (!response.ok || !result.success) {
         throw new Error(result.error?.message || 'Failed to load recent matches');
       }
 
-      setRecentMatches(result.data.matches);
+      const todaysMatches = (result.data.matches as RecentMatch[]).filter((match) => {
+        const localPlayedDate = getLocalDateString(match.playedAt);
+        return localPlayedDate === today;
+      });
+
+      setRecentMatches(todaysMatches);
     } catch {
       setRecentMatches([]);
     } finally {
@@ -374,7 +391,6 @@ export default function PublicScoreEntry({ mode = 'page' }: PublicScoreEntryProp
         <div className={styles.cardHeader}>
           <div>
             <div className={styles.cardTitle}>Live score entry</div>
-            <div className={styles.cardSubtitle}>No extra clutter. Just players, score, and submit.</div>
           </div>
           <span className={styles.pill}>Public</span>
         </div>
@@ -458,15 +474,7 @@ export default function PublicScoreEntry({ mode = 'page' }: PublicScoreEntryProp
             value={matchSearchQuery}
             onChange={(event) => setMatchSearchQuery(event.target.value)}
           />
-          <div className={styles.todayPill}>Today only</div>
-          <button
-            type="button"
-            className={styles.refreshButton}
-            onClick={loadRecentMatches}
-            disabled={loadingRecentMatches}
-          >
-            Refresh
-          </button>
+          <div className={styles.todayPill}>Showing today&apos;s matches</div>
         </div>
 
         <div className={styles.matchList}>

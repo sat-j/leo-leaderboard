@@ -5,9 +5,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const limitParam = Number.parseInt(searchParams.get('limit') || '25', 10);
-    const limit = Number.isNaN(limitParam) ? 25 : Math.min(Math.max(limitParam, 1), 100);
+    const limit = Number.isNaN(limitParam) ? 25 : Math.min(Math.max(limitParam, 1), 250);
     const dateFilter = searchParams.get('date');
-    const matches = await listRecentMatches(limit);
+    const matches = await listRecentMatches(dateFilter ? 500 : limit);
     const normalizedMatches = matches.map((match) => {
       const playDateRow = Array.isArray(match.play_dates) ? match.play_dates[0] : match.play_dates;
       const participants = [...(match.match_participants ?? [])].sort((left, right) => {

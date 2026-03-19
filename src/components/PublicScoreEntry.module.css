@@ -48,6 +48,7 @@
   font-size: 22px;
   font-weight: 700;
   line-height: 1.1;
+  color: #f8fafc;
 }
 
 .subtitle {
@@ -77,6 +78,7 @@
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  color: #f8fafc;
 }
 
 .cardSubtitle {
@@ -292,6 +294,7 @@
   font-size: 16px;
   font-weight: 700;
   line-height: 1.1;
+  color: #f8fafc;
 }
 
 .recentSubtitle {
@@ -302,7 +305,7 @@
 
 .controlsRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   margin-bottom: 12px;
@@ -331,10 +334,11 @@
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 12px;
-  color: #dbeafe;
-  background: rgba(59, 130, 246, 0.18);
-  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px dashed rgba(148, 163, 184, 0.28);
   white-space: nowrap;
+  pointer-events: none;
 }
 
 .matchList {
