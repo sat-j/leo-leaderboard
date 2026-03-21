@@ -32,9 +32,66 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['players']['Insert']>;
       };
+      seasons: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          start_date: string;
+          end_date: string | null;
+          is_current: boolean;
+          status: 'draft' | 'active' | 'completed' | 'archived';
+          reset_strategy: 'hard_reset' | 'soft_reset';
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          slug: string;
+          start_date: string;
+          end_date?: string | null;
+          is_current?: boolean;
+          status?: 'draft' | 'active' | 'completed' | 'archived';
+          reset_strategy?: 'hard_reset' | 'soft_reset';
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['seasons']['Insert']>;
+      };
+      player_season_assignments: {
+        Row: {
+          id: string;
+          season_id: string;
+          player_id: string;
+          level: PlayerLevel;
+          seed_mu: number;
+          seed_sigma: number;
+          seed_source: 'level_baseline' | 'carryover' | 'manual';
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          season_id: string;
+          player_id: string;
+          level: PlayerLevel;
+          seed_mu: number;
+          seed_sigma: number;
+          seed_source?: 'level_baseline' | 'carryover' | 'manual';
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['player_season_assignments']['Insert']>;
+      };
       play_dates: {
         Row: {
           id: string;
+          season_id: string | null;
           play_date: string;
           label_short: string | null;
           label_long: string | null;
@@ -45,6 +102,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          season_id?: string | null;
           play_date: string;
           label_short?: string | null;
           label_long?: string | null;
@@ -58,6 +116,7 @@ export interface Database {
       matches: {
         Row: {
           id: string;
+          season_id: string | null;
           play_date_id: string;
           played_at: string;
           score1: number;
@@ -73,6 +132,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          season_id?: string | null;
           play_date_id: string;
           played_at: string;
           score1: number;
@@ -135,6 +195,7 @@ export interface Database {
       rating_snapshots: {
         Row: {
           id: string;
+          season_id: string | null;
           player_id: string;
           play_date_id: string;
           processing_run_id: string | null;
@@ -147,6 +208,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          season_id?: string | null;
           player_id: string;
           play_date_id: string;
           processing_run_id?: string | null;
@@ -162,6 +224,7 @@ export interface Database {
       player_date_stats: {
         Row: {
           id: string;
+          season_id: string | null;
           player_id: string;
           play_date_id: string;
           matches_played: number;
@@ -175,6 +238,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          season_id?: string | null;
           player_id: string;
           play_date_id: string;
           matches_played?: number;

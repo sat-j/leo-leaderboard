@@ -5,12 +5,16 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import PlayerStatsReport from '@/components/PlayerStatsReport';
+import SeasonNavigation from '@/components/SeasonNavigation';
 import { PlayerAnalytics } from '@/lib/playerAnalytics';
-import { PlayDateOption } from '@/types';
+import { PlayDateOption, SeasonOption } from '@/types';
 
 interface ApiResponse {
   analytics: PlayerAnalytics;
   playDates: PlayDateOption[];
+  seasons: SeasonOption[];
+  selectedSeason: string;
+  currentSeason: string | null;
   selectedDate: string | null;
   player: {
     slug: string;
@@ -26,14 +30,22 @@ export default function PlayerStatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
 
-    const url = selectedDate
-      ? `/api/public/players/${encodeURIComponent(playerSlug)}/stats?date=${selectedDate}`
-      : `/api/public/players/${encodeURIComponent(playerSlug)}/stats`;
+    const query = new URLSearchParams();
+    if (selectedSeason) {
+      query.set('season', selectedSeason);
+    }
+    if (selectedDate) {
+      query.set('date', selectedDate);
+    }
+
+    const basePath = `/api/public/players/${encodeURIComponent(playerSlug)}/stats`;
+    const url = query.size > 0 ? `${basePath}?${query.toString()}` : basePath;
 
     fetch(url)
       .then(async (res) => {
@@ -46,10 +58,11 @@ export default function PlayerStatsPage() {
       .then((nextData: ApiResponse) => {
         setData(nextData);
         setSelectedDate(nextData.selectedDate);
+        setSelectedSeason(nextData.selectedSeason);
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Unknown error'))
       .finally(() => setLoading(false));
-  }, [playerSlug, selectedDate]);
+  }, [playerSlug, selectedDate, selectedSeason]);
 
   if (loading) {
     return (
@@ -91,6 +104,16 @@ export default function PlayerStatsPage() {
           <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">{data.player.displayName}</h1>
           <p className="text-electric-200">Detailed player statistics and analysis</p>
         </div>
+
+        <SeasonNavigation
+          seasons={data.seasons}
+          selectedSeason={data.selectedSeason}
+          currentSeason={data.currentSeason}
+          onSeasonChange={(season) => {
+            setSelectedSeason(season);
+            setSelectedDate(null);
+          }}
+        />
 
         <div className="flex justify-center mb-6">
           <div className="flex items-center gap-3 bg-white/10 rounded-xl px-4 py-3">

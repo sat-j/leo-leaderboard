@@ -10,7 +10,8 @@ export async function GET(
     const { slug } = await params;
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') ?? undefined;
-    const data = await getPlayerAnalyticsBySlug(slug, date);
+    const season = searchParams.get('season') ?? undefined;
+    const data = await getPlayerAnalyticsBySlug(slug, date, season);
 
     return NextResponse.json({
       success: true,

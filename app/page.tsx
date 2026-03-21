@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import PublicScoreEntry from '@/components/PublicScoreEntry';
+import SeasonNavigation from '@/components/SeasonNavigation';
 import DateNavigation from '@/components/DateNavigation';
 import StatsGrid from '@/components/StatsGrid';
 import LevelLeaderboards from '@/components/LevelLeaderboards';
@@ -21,12 +22,19 @@ export default function Home() {
   const [isPlayerStatsOpen, setIsPlayerStatsOpen] = useState<boolean>(false);
   const [isMatchesOpen, setIsMatchesOpen] = useState<boolean>(false);
 
-  const fetchLeaderboardData = async (date?: string) => {
+  const fetchLeaderboardData = async (options?: { date?: string; season?: string }) => {
     setLoading(true);
     setError(null);
 
     try {
-      const url = date ? `/api/public/leaderboard?date=${date}` : '/api/public/leaderboard';
+      const query = new URLSearchParams();
+      if (options?.date) {
+        query.set('date', options.date);
+      }
+      if (options?.season) {
+        query.set('season', options.season);
+      }
+      const url = query.size > 0 ? `/api/public/leaderboard?${query.toString()}` : '/api/public/leaderboard';
       const response = await fetch(url);
       const result = await response.json();
 
@@ -104,7 +112,7 @@ export default function Home() {
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Error Loading Data</h2>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
-            onClick={() => fetchLeaderboardData(selectedDate ?? undefined)}
+            onClick={() => fetchLeaderboardData({ date: selectedDate ?? undefined, season: data?.selectedSeason })}
             className="bg-electric-600 text-white px-6 py-2 rounded-lg hover:bg-electric-700 transition-colors"
           >
             Retry
@@ -117,6 +125,8 @@ export default function Home() {
   if (!data) {
     return null;
   }
+
+  const isWaitingForSeasonStart = data.playDates.length === 0;
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-electric-900 to-electric-700">
@@ -150,69 +160,88 @@ export default function Home() {
           </div>
         </div>
 
-        <DateNavigation
-          selectedDate={data.selectedDate}
-          playDates={data.playDates}
-          previousDate={data.previousDate}
-          nextDate={data.nextDate}
-          onDateChange={(date) => fetchLeaderboardData(date)}
+        <SeasonNavigation
+          seasons={data.seasons}
+          selectedSeason={data.selectedSeason}
+          currentSeason={data.currentSeason}
+          onSeasonChange={(season) => fetchLeaderboardData({ season })}
         />
 
-        <div className="mb-4 text-center sm:mb-6">
-          <p className="text-sm font-medium text-electric-100">
-            # {data.matches.length} {data.matches.length === 1 ? 'match' : 'matches'} on this date
-          </p>
-        </div>
-
-        <StatsGrid weekStats={data.weekStats} />
-
-        <LevelLeaderboards levelLeaderboards={data.levelLeaderboards} />
-
-        <FunStats
-          rockstars={data.rockstars}
-          closeBuddies={data.closeBuddies}
-          rivalries={data.rivalries}
-        />
-
-        {data.playerWeekStats && data.playerWeekStats.length > 0 ? (
-          <section className="mb-8">
-            <div className="mb-3 flex items-center justify-between sm:hidden">
-              <div>
-                <h2 className="text-lg font-bold text-white">Player Statistics</h2>
-                <p className="text-xs text-electric-200">Expanded table, hidden by default on mobile.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsPlayerStatsOpen((current) => !current)}
-                className="rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(10,22,44,0.88),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.01))] px-3 py-1.5 text-xs font-semibold text-electric-100"
-              >
-                {isPlayerStatsOpen ? 'Hide' : 'Show'}
-              </button>
-            </div>
-            <div className={`${isPlayerStatsOpen ? 'block' : 'hidden'} sm:block`}>
-              <PlayerStatsTable stats={data.playerWeekStats} title="Player Statistics" isOverall={false} />
-            </div>
+        {isWaitingForSeasonStart ? (
+          <section className="mx-auto mt-8 max-w-3xl rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,22,44,0.9),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.01))] p-6 text-center shadow-[0_14px_32px_rgba(0,0,0,0.28)] backdrop-blur-[10px] sm:p-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Season Ready</p>
+            <h2 className="mt-3 text-2xl font-bold text-white sm:text-3xl">Waiting for season to begin</h2>
+            <p className="mt-3 text-sm leading-6 text-electric-200 sm:text-base">
+              {data.selectedSeasonName} has been created, but no processed play dates exist yet. Once the first club night is played and rebuilt, the dashboard will fill in automatically.
+            </p>
           </section>
-        ) : null}
+        ) : (
+          <>
+            <DateNavigation
+              selectedDate={data.selectedDate}
+              playDates={data.playDates}
+              previousDate={data.previousDate}
+              nextDate={data.nextDate}
+              onDateChange={(date) => fetchLeaderboardData({ date, season: data.selectedSeason })}
+            />
 
-        <section className="mb-8">
-          <div className="mb-3 flex items-center justify-between sm:hidden">
-            <div>
-              <h2 className="text-lg font-bold text-white">Matches</h2>
-              <p className="text-xs text-electric-200">{data.matches.length} matches for this play date.</p>
+            <div className="mb-4 text-center sm:mb-6">
+              <p className="text-sm font-medium text-electric-100">
+                # {data.matches.length} {data.matches.length === 1 ? 'match' : 'matches'} on this date
+              </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsMatchesOpen((current) => !current)}
-              className="rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(10,22,44,0.88),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.01))] px-3 py-1.5 text-xs font-semibold text-electric-100"
-            >
-              {isMatchesOpen ? 'Hide' : 'Show'}
-            </button>
-          </div>
-          <div className={`${isMatchesOpen ? 'block' : 'hidden'} sm:block`}>
-            <GamesTable matches={data.matches} />
-          </div>
-        </section>
+
+            <StatsGrid weekStats={data.weekStats} />
+
+            <LevelLeaderboards levelLeaderboards={data.levelLeaderboards} />
+
+            <FunStats
+              rockstars={data.rockstars}
+              closeBuddies={data.closeBuddies}
+              rivalries={data.rivalries}
+            />
+
+            {data.playerWeekStats && data.playerWeekStats.length > 0 ? (
+              <section className="mb-8">
+                <div className="mb-3 flex items-center justify-between sm:hidden">
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Player Statistics</h2>
+                    <p className="text-xs text-electric-200">Expanded table, hidden by default on mobile.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPlayerStatsOpen((current) => !current)}
+                    className="rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(10,22,44,0.88),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.01))] px-3 py-1.5 text-xs font-semibold text-electric-100"
+                  >
+                    {isPlayerStatsOpen ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <div className={`${isPlayerStatsOpen ? 'block' : 'hidden'} sm:block`}>
+                  <PlayerStatsTable stats={data.playerWeekStats} title="Player Statistics" isOverall={false} />
+                </div>
+              </section>
+            ) : null}
+
+            <section className="mb-8">
+              <div className="mb-3 flex items-center justify-between sm:hidden">
+                <div>
+                  <h2 className="text-lg font-bold text-white">Matches</h2>
+                  <p className="text-xs text-electric-200">{data.matches.length} matches for this play date.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMatchesOpen((current) => !current)}
+                  className="rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(10,22,44,0.88),rgba(6,16,32,0.94)),linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.01))] px-3 py-1.5 text-xs font-semibold text-electric-100"
+                >
+                  {isMatchesOpen ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <div className={`${isMatchesOpen ? 'block' : 'hidden'} sm:block`}>
+                <GamesTable matches={data.matches} />
+              </div>
+            </section>
+          </>
+        )}
 
         <div className="mt-8 text-center text-sm text-electric-200 sm:mt-12">
           <p>Powered by TrueSkill Rating System</p>

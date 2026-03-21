@@ -1,8 +1,9 @@
-import type { Match, PlayerOverallStat, PlayDateOption } from '@/types';
+import type { Match, PlayerOverallStat, PlayDateOption, SeasonOption } from '@/types';
 import type { PlayerAnalytics } from '@/lib/playerAnalytics';
 import { calculatePlayerAnalytics } from '@/lib/playerAnalytics';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { listProcessedPlayDates } from '@/lib/repositories/leaderboard';
+import { getResolvedSeason } from '@/lib/repositories/seasons';
 
 function getSingleRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) {
@@ -36,13 +37,18 @@ function buildMatchShape(row: any, dateSequenceMap: Map<string, number>): Match 
   };
 }
 
-export async function getOverallStats(): Promise<{
+export async function getOverallStats(season?: string): Promise<{
   overallStats: PlayerOverallStat[];
   totalPlayDates: number;
   totalMatches: number;
+  seasons: SeasonOption[];
+  selectedSeason: string;
+  selectedSeasonName: string;
+  currentSeason: string | null;
 }> {
   const supabase = createSupabaseAdminClient();
-  const playDates = await listProcessedPlayDates();
+  const { seasons, selectedSeason, currentSeason } = await getResolvedSeason(season);
+  const playDates = await listProcessedPlayDates(selectedSeason.id);
   const latestPlayDate = playDates[playDates.length - 1] ?? null;
 
   const [{ data: snapshotsRaw, error: snapshotsError }, { data: statsRaw, error: statsError }, { count: matchCount, error: matchCountError }] =
@@ -51,12 +57,18 @@ export async function getOverallStats(): Promise<{
         ? supabase
             .from('rating_snapshots')
             .select('player_id, mu, sigma, skill_rating, players ( display_name, level )')
+            .eq('season_id', selectedSeason.id)
             .eq('play_date_id', latestPlayDate.id)
         : Promise.resolve({ data: [], error: null } as any),
       supabase
         .from('player_date_stats')
-        .select('player_id, matches_played, matches_won, points_scored, points_difference, rating_change'),
-      supabase.from('matches').select('id', { count: 'exact', head: true }).eq('status', 'processed'),
+        .select('player_id, matches_played, matches_won, points_scored, points_difference, rating_change')
+        .eq('season_id', selectedSeason.id),
+      supabase
+        .from('matches')
+        .select('id', { count: 'exact', head: true })
+        .eq('season_id', selectedSeason.id)
+        .eq('status', 'processed'),
     ]);
 
   if (snapshotsError || statsError || matchCountError) {
@@ -127,17 +139,25 @@ export async function getOverallStats(): Promise<{
     overallStats,
     totalPlayDates: playDates.length,
     totalMatches: matchCount ?? 0,
+    seasons,
+    selectedSeason: selectedSeason.slug,
+    selectedSeasonName: selectedSeason.name,
+    currentSeason,
   };
 }
 
-export async function getPlayerAnalyticsBySlug(slug: string, date?: string): Promise<{
+export async function getPlayerAnalyticsBySlug(slug: string, date?: string, season?: string): Promise<{
   analytics: PlayerAnalytics;
   playDates: PlayDateOption[];
+  seasons: SeasonOption[];
+  selectedSeason: string;
+  currentSeason: string | null;
   selectedDate: string | null;
   player: { slug: string; displayName: string };
 }> {
   const supabase = createSupabaseAdminClient();
-  const playDates = await listProcessedPlayDates();
+  const { seasons, selectedSeason, currentSeason } = await getResolvedSeason(season);
+  const playDates = await listProcessedPlayDates(selectedSeason.id);
   const dateSequenceMap = new Map(playDates.map((playDate, index) => [playDate.date, index + 1]));
 
   const { data: playerRow, error: playerError } = await supabase
@@ -158,6 +178,7 @@ export async function getPlayerAnalyticsBySlug(slug: string, date?: string): Pro
     .select(
       'score1, score2, play_dates ( play_date ), match_participants ( team_number, seat_number, players ( display_name ) )'
     )
+    .eq('season_id', selectedSeason.id)
     .eq('status', 'processed')
     .order('played_at', { ascending: true });
 
@@ -179,6 +200,9 @@ export async function getPlayerAnalyticsBySlug(slug: string, date?: string): Pro
   return {
     analytics,
     playDates,
+    seasons,
+    selectedSeason: selectedSeason.slug,
+    currentSeason,
     selectedDate,
     player: {
       slug: playerRow.slug,

@@ -12,6 +12,7 @@ import type {
   PlayDateOption,
 } from '@/types';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { getResolvedSeason } from '@/lib/repositories/seasons';
 
 interface SnapshotRow {
   player_id: string;
@@ -122,13 +123,19 @@ function calculateRivalries(matches: Match[]): PlayerPair[] {
     .slice(0, 3);
 }
 
-export async function listProcessedPlayDates(): Promise<PlayDateOption[]> {
+export async function listProcessedPlayDates(seasonId?: string): Promise<PlayDateOption[]> {
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from('play_dates')
     .select('id, play_date, label_short, label_long, match_count')
     .eq('is_processed', true)
     .order('play_date', { ascending: true });
+
+  if (seasonId) {
+    query = query.eq('season_id', seasonId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -143,12 +150,36 @@ export async function listProcessedPlayDates(): Promise<PlayDateOption[]> {
   }));
 }
 
-export async function getPublicLeaderboard(date?: string): Promise<PublicLeaderboardData> {
+export async function getPublicLeaderboard(date?: string, season?: string): Promise<PublicLeaderboardData> {
   const supabase = createSupabaseAdminClient();
-  const playDates = await listProcessedPlayDates();
+  const { seasons, selectedSeason, currentSeason } = await getResolvedSeason(season);
+  const playDates = await listProcessedPlayDates(selectedSeason.id);
 
   if (playDates.length === 0) {
-    throw new Error('No processed play dates found. Run rebuild first.');
+    return {
+      selectedSeason: selectedSeason.slug,
+      selectedSeasonName: selectedSeason.name,
+      currentSeason,
+      selectedDate: '',
+      selectedDateLabel: 'Waiting for season to begin',
+      previousDate: null,
+      nextDate: null,
+      seasons,
+      playDates: [],
+      weekStats: {
+        week: 0,
+        gamesPlayed: 0,
+        topPlayers: [],
+        mostGamesPlayed: [],
+        bestWinPercentage: [],
+      },
+      levelLeaderboards: { ADV: [], INT: [], PLUS: [] },
+      rockstars: [],
+      closeBuddies: [],
+      rivalries: [],
+      matches: [],
+      playerWeekStats: [],
+    };
   }
 
   const selectedIndex = date
@@ -169,22 +200,26 @@ export async function getPublicLeaderboard(date?: string): Promise<PublicLeaderb
       supabase
         .from('rating_snapshots')
         .select('player_id, play_date_id, mu, sigma, skill_rating, rating_change, rank_overall, players ( id, display_name, level )')
+        .eq('season_id', selectedSeason.id)
         .eq('play_date_id', selectedPlayDate.id),
       previousPlayDateId
         ? supabase
             .from('rating_snapshots')
             .select('player_id, play_date_id, mu, sigma, skill_rating, rating_change, rank_overall, players ( id, display_name, level )')
+            .eq('season_id', selectedSeason.id)
             .eq('play_date_id', previousPlayDateId)
         : Promise.resolve({ data: [], error: null } as any),
       supabase
         .from('player_date_stats')
         .select('player_id, play_date_id, matches_played, matches_won, win_rate, points_scored, points_conceded, points_difference, rating_change')
+        .eq('season_id', selectedSeason.id)
         .eq('play_date_id', selectedPlayDate.id),
       supabase
         .from('matches')
         .select(
           'score1, score2, play_dates ( play_date ), match_participants ( team_number, seat_number, players ( display_name ) )'
         )
+        .eq('season_id', selectedSeason.id)
         .eq('play_date_id', selectedPlayDate.id)
         .eq('status', 'processed')
         .order('played_at', { ascending: true }),
@@ -193,12 +228,14 @@ export async function getPublicLeaderboard(date?: string): Promise<PublicLeaderb
         .select(
           'score1, score2, play_dates ( play_date ), match_participants ( team_number, seat_number, players ( display_name ) )'
         )
+        .eq('season_id', selectedSeason.id)
         .in('play_date_id', eligibleDateIds)
         .eq('status', 'processed')
         .order('played_at', { ascending: true }),
       supabase
         .from('rating_snapshots')
         .select('player_id, mu, players ( display_name )')
+        .eq('season_id', selectedSeason.id)
         .in('play_date_id', eligibleDateIds),
     ]);
 
@@ -332,10 +369,14 @@ export async function getPublicLeaderboard(date?: string): Promise<PublicLeaderb
     .slice(0, 3);
 
   return {
+    selectedSeason: selectedSeason.slug,
+    selectedSeasonName: selectedSeason.name,
+    currentSeason,
     selectedDate: selectedPlayDate.date,
     selectedDateLabel: selectedPlayDate.labelShort,
     previousDate,
     nextDate,
+    seasons,
     playDates,
     weekStats: {
       week: selectedIndex + 1,

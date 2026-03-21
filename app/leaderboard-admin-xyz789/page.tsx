@@ -58,6 +58,36 @@ interface MatchDateOption {
   matchCount: number;
 }
 
+interface AdminSeason {
+  id: string;
+  name: string;
+  slug: string;
+  startDate: string;
+  endDate: string | null;
+  isCurrent: boolean;
+  status: 'draft' | 'active' | 'completed' | 'archived';
+}
+
+interface EditableSeasonAssignment {
+  level: 'INT' | 'PLUS' | 'ADV';
+  seedMu: string;
+  seedSigma: string;
+  isActive: boolean;
+}
+
+interface PlayerSeasonAssignment {
+  id: string;
+  seasonId: string;
+  playerId: string;
+  displayName: string;
+  slug: string;
+  level: 'INT' | 'PLUS' | 'ADV';
+  seedMu: number;
+  seedSigma: number;
+  seedSource: 'level_baseline' | 'carryover' | 'manual';
+  isActive: boolean;
+}
+
 const MATCH_PAGE_SIZE = 20;
 const CLUB_TIME_ZONE = process.env.NEXT_PUBLIC_CLUB_TIME_ZONE || 'America/Toronto';
 
@@ -192,6 +222,48 @@ function shiftMonth(date: Date, delta: number) {
   return new Date(date.getFullYear(), date.getMonth() + delta, 1);
 }
 
+function slugifySeasonName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function baselineForLevel(level: 'INT' | 'PLUS' | 'ADV') {
+  if (level === 'ADV') {
+    return { seedMu: 45, seedSigma: 8.33 };
+  }
+
+  if (level === 'PLUS') {
+    return { seedMu: 35, seedSigma: 8.33 };
+  }
+
+  return { seedMu: 25, seedSigma: 8.33 };
+}
+
+function formatSeasonDateRange(startDate: string, endDate: string | null) {
+  const start = new Date(`${startDate}T12:00:00`);
+  const end = endDate ? new Date(`${endDate}T12:00:00`) : null;
+
+  const startLabel = start.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  if (!end) {
+    return `Starts ${startLabel}`;
+  }
+
+  const endLabel = end.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  return `${startLabel} - ${endLabel}`;
+}
+
+function buildEditableAssignmentState(assignment: PlayerSeasonAssignment): EditableSeasonAssignment {
+  return {
+    level: assignment.level,
+    seedMu: assignment.seedMu.toFixed(2),
+    seedSigma: assignment.seedSigma.toFixed(2),
+    isActive: assignment.isActive,
+  };
+}
+
 export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -217,6 +289,7 @@ export default function AdminPage() {
   const [matchStatusFilter, setMatchStatusFilter] = useState('all');
   const [matchPage, setMatchPage] = useState(1);
   const [isPlayersOpen, setIsPlayersOpen] = useState(false);
+  const [isSeasonManagerOpen, setIsSeasonManagerOpen] = useState(false);
   const [isRebuildHistoryOpen, setIsRebuildHistoryOpen] = useState(false);
   const [isDateBrowserOpen, setIsDateBrowserOpen] = useState(false);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
@@ -232,6 +305,18 @@ export default function AdminPage() {
   const [dateMatchSearch, setDateMatchSearch] = useState('');
   const [expandedDateMatchId, setExpandedDateMatchId] = useState<string | null>(null);
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
+  const [seasons, setSeasons] = useState<AdminSeason[]>([]);
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  const [seasonAssignments, setSeasonAssignments] = useState<PlayerSeasonAssignment[]>([]);
+  const [assignmentEditState, setAssignmentEditState] = useState<Record<string, EditableSeasonAssignment>>({});
+  const [activeSeasonAssignmentId, setActiveSeasonAssignmentId] = useState<string | null>(null);
+  const [isLoadingSeasons, setIsLoadingSeasons] = useState(false);
+  const [isLoadingSeasonAssignments, setIsLoadingSeasonAssignments] = useState(false);
+  const [seasonSearch, setSeasonSearch] = useState('');
+  const [newSeasonName, setNewSeasonName] = useState('');
+  const [newSeasonStartDate, setNewSeasonStartDate] = useState('');
+  const [newSeasonEndDate, setNewSeasonEndDate] = useState('');
+  const [isCreatingSeason, setIsCreatingSeason] = useState(false);
 
   const loadMatches = async (page: number, search: string, statusFilter: string) => {
     const offset = (page - 1) * MATCH_PAGE_SIZE;
@@ -407,6 +492,72 @@ export default function AdminPage() {
     setMatchPlayerOptions(result.data.players as AdminPlayer[]);
     return true;
   };
+
+  const loadSeasons = async () => {
+    setIsLoadingSeasons(true);
+
+    try {
+      const response = await fetch('/api/admin/seasons', {
+        credentials: 'include',
+      });
+
+      if (response.status === 401) {
+        setIsAuthenticated(false);
+        return false;
+      }
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || 'Failed to load seasons');
+      }
+
+      const nextSeasons = (result.data.seasons as AdminSeason[] | null) ?? [];
+      setSeasons(nextSeasons);
+      setSelectedSeasonId((current) => {
+        if (current && nextSeasons.some((season) => season.id === current)) {
+          return current;
+        }
+
+        return nextSeasons.find((season) => season.isCurrent)?.id ?? nextSeasons[0]?.id ?? null;
+      });
+
+      return true;
+    } finally {
+      setIsLoadingSeasons(false);
+    }
+  };
+
+  const loadSeasonAssignments = async (seasonId: string) => {
+    setIsLoadingSeasonAssignments(true);
+
+    try {
+      const response = await fetch(`/api/admin/seasons/${seasonId}/players`, {
+        credentials: 'include',
+      });
+
+      if (response.status === 401) {
+        setIsAuthenticated(false);
+        return false;
+      }
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || 'Failed to load season assignments');
+      }
+
+      const nextAssignments = (result.data.assignments as PlayerSeasonAssignment[] | null) ?? [];
+      setSeasonAssignments(nextAssignments);
+      setAssignmentEditState(
+        Object.fromEntries(
+          nextAssignments.map((assignment) => [assignment.id, buildEditableAssignmentState(assignment)])
+        )
+      );
+
+      return true;
+    } finally {
+      setIsLoadingSeasonAssignments(false);
+    }
+  };
   const loadDashboardData = async () => {
     setLoadingData(true);
     setPageError(null);
@@ -424,12 +575,13 @@ export default function AdminPage() {
         throw new Error(runsResult.error?.message || 'Failed to load processing runs');
       }
 
-      const [matchesLoaded, optionsLoaded, matchDatesLoaded] = await Promise.all([
+      const [matchesLoaded, optionsLoaded, matchDatesLoaded, seasonsLoaded] = await Promise.all([
         loadMatches(matchPage, matchSearch, matchStatusFilter),
         loadMatchPlayerOptions(),
         loadMatchDates(),
+        loadSeasons(),
       ]);
-      if (!matchesLoaded || !optionsLoaded || !matchDatesLoaded) {
+      if (!matchesLoaded || !optionsLoaded || !matchDatesLoaded || !seasonsLoaded) {
         return;
       }
 
@@ -500,6 +652,22 @@ export default function AdminPage() {
     refreshDateMatches();
   }, [isAuthenticated, isDateBrowserOpen, selectedMatchDate]);
 
+  useEffect(() => {
+    if (!isAuthenticated || !isSeasonManagerOpen || !selectedSeasonId) {
+      return;
+    }
+
+    const refreshAssignments = async () => {
+      try {
+        await loadSeasonAssignments(selectedSeasonId);
+      } catch (error) {
+        setPageError(error instanceof Error ? error.message : 'Failed to load season assignments');
+      }
+    };
+
+    refreshAssignments();
+  }, [isAuthenticated, isSeasonManagerOpen, selectedSeasonId]);
+
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoggingIn(true);
@@ -541,6 +709,10 @@ export default function AdminPage() {
     setMatchTotal(0);
     setProcessingRuns([]);
     setPlayers([]);
+    setSeasons([]);
+    setSelectedSeasonId(null);
+    setSeasonAssignments([]);
+    setAssignmentEditState({});
     setEditState({});
     setPlayerEditState({});
     setRebuildMessage(null);
@@ -781,7 +953,191 @@ export default function AdminPage() {
     }
   };
 
+  const handleCreateSeason = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsCreatingSeason(true);
+    setPageError(null);
+
+    try {
+      const trimmedName = newSeasonName.trim();
+      if (!trimmedName) {
+        throw new Error('Season name is required');
+      }
+
+      if (!newSeasonStartDate) {
+        throw new Error('Season start date is required');
+      }
+
+      const slug = slugifySeasonName(trimmedName);
+      if (!slug) {
+        throw new Error('Season name must produce a valid slug');
+      }
+
+      const response = await fetch('/api/admin/seasons', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: trimmedName,
+          slug,
+          startDate: newSeasonStartDate,
+          endDate: newSeasonEndDate || null,
+          isCurrent: true,
+          status: 'active',
+          resetStrategy: 'hard_reset',
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || 'Failed to create season');
+      }
+
+      const createdSeason = result.data.season as AdminSeason;
+      setNewSeasonName('');
+      setNewSeasonStartDate('');
+      setNewSeasonEndDate('');
+      setPageError(`Season "${createdSeason.name}" is ready and set as current.`);
+      setNeedsRebuild(true);
+      await loadSeasons();
+      setSelectedSeasonId(createdSeason.id);
+      if (isSeasonManagerOpen) {
+        await loadSeasonAssignments(createdSeason.id);
+      }
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : 'Failed to create season');
+    } finally {
+      setIsCreatingSeason(false);
+    }
+  };
+
+  const handleMakeCurrentSeason = async (season: AdminSeason) => {
+    setActivePlayerId(`season-${season.id}`);
+    setPageError(null);
+
+    try {
+      const response = await fetch(`/api/admin/seasons/${season.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          isCurrent: true,
+          status: season.status === 'archived' ? 'active' : season.status,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || 'Failed to update season');
+      }
+
+      setPageError(`Current season changed to "${season.name}". New public submissions will attach there.`);
+      await loadSeasons();
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : 'Failed to update season');
+    } finally {
+      setActivePlayerId(null);
+    }
+  };
+
+  const updateAssignmentField = (
+    assignmentId: string,
+    field: keyof EditableSeasonAssignment,
+    value: string | boolean
+  ) => {
+    setAssignmentEditState((current) => ({
+      ...current,
+      [assignmentId]: {
+        ...current[assignmentId],
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleResetAssignmentBaseline = (assignmentId: string) => {
+    const current = assignmentEditState[assignmentId];
+    if (!current) {
+      return;
+    }
+
+    const baseline = baselineForLevel(current.level);
+    setAssignmentEditState((state) => ({
+      ...state,
+      [assignmentId]: {
+        ...state[assignmentId],
+        seedMu: baseline.seedMu.toFixed(2),
+        seedSigma: baseline.seedSigma.toFixed(2),
+      },
+    }));
+  };
+
+  const handleSaveAssignment = async (assignmentId: string) => {
+    const current = assignmentEditState[assignmentId];
+    if (!current || !selectedSeasonId) {
+      return;
+    }
+
+    setActiveSeasonAssignmentId(assignmentId);
+    setPageError(null);
+
+    try {
+      const response = await fetch(`/api/admin/seasons/${selectedSeasonId}/players`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          assignmentId,
+          level: current.level,
+          seedMu: Number.parseFloat(current.seedMu),
+          seedSigma: Number.parseFloat(current.seedSigma),
+          isActive: current.isActive,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || 'Failed to update season assignment');
+      }
+
+      setPageError('Season assignment updated. Run rebuild once you are ready for the new season standings.');
+      setNeedsRebuild(true);
+      await loadSeasonAssignments(selectedSeasonId);
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : 'Failed to update season assignment');
+    } finally {
+      setActiveSeasonAssignmentId(null);
+    }
+  };
+
   const totalMatchPages = Math.max(1, Math.ceil(matchTotal / MATCH_PAGE_SIZE));
+  const currentSeason = useMemo(
+    () => seasons.find((season) => season.isCurrent) ?? null,
+    [seasons]
+  );
+  const selectedSeason = useMemo(
+    () => seasons.find((season) => season.id === selectedSeasonId) ?? null,
+    [seasons, selectedSeasonId]
+  );
+  const filteredSeasonAssignments = useMemo(() => {
+    const query = seasonSearch.trim().toLowerCase();
+    if (!query) {
+      return seasonAssignments;
+    }
+
+    return seasonAssignments.filter((assignment) => {
+      const haystack = [assignment.displayName, assignment.level, assignment.slug]
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [seasonAssignments, seasonSearch]);
   const enabledMatchDateSet = useMemo(
     () => new Set(matchDates.map((item) => item.playDate)),
     [matchDates]
@@ -907,6 +1263,12 @@ export default function AdminPage() {
           </div>
         ) : null}
 
+        {!loadingData && seasons.length > 0 && !currentSeason ? (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-100">
+            No current season is set. Public score entry should not be used until one season is marked current.
+          </div>
+        ) : null}
+
         {pageError ? <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">{pageError}</div> : null}
 
         <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
@@ -960,6 +1322,257 @@ export default function AdminPage() {
                   </div>
                 </article>
               ))}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 sm:p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Season Manager</h2>
+              <p className="mt-2 text-sm text-slate-300">
+                Start the next season, mark the active one, and tune promotion or relegation seed values.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsSeasonManagerOpen((current) => !current)}
+              className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800"
+            >
+              {isSeasonManagerOpen ? 'Hide Season Manager' : 'Open Season Manager'}
+            </button>
+          </div>
+
+          {isSeasonManagerOpen ? (
+            <div className="mt-6 space-y-4">
+              <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Current Attachment</p>
+                      <h3 className="mt-1 text-lg font-semibold text-white">
+                        {currentSeason ? currentSeason.name : 'No current season'}
+                      </h3>
+                    </div>
+                    {currentSeason ? (
+                      <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100">
+                        Current Season
+                      </span>
+                    ) : (
+                      <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-rose-100">
+                        Action Needed
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-slate-300">
+                    Public score submissions attach to the current season automatically. Change this before league night if you are moving to a clean slate.
+                  </p>
+                </div>
+
+                <form onSubmit={handleCreateSeason} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <label className="mb-1 block text-[11px] uppercase tracking-[0.18em] text-slate-400">Next season name</label>
+                      <input
+                        type="text"
+                        value={newSeasonName}
+                        onChange={(event) => setNewSeasonName(event.target.value)}
+                        placeholder="Season 2 (Apr - Jun 2026)"
+                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition focus:border-emerald-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] uppercase tracking-[0.18em] text-slate-400">Start date</label>
+                      <input
+                        type="date"
+                        value={newSeasonStartDate}
+                        onChange={(event) => setNewSeasonStartDate(event.target.value)}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition focus:border-emerald-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] uppercase tracking-[0.18em] text-slate-400">End date</label>
+                      <input
+                        type="date"
+                        value={newSeasonEndDate}
+                        onChange={(event) => setNewSeasonEndDate(event.target.value)}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition focus:border-emerald-400"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <p className="text-xs text-slate-400">New seasons start as current and seed players from level baselines.</p>
+                    <button
+                      type="submit"
+                      disabled={isCreatingSeason}
+                      className="rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {isCreatingSeason ? 'Starting...' : 'Start Next Season'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-300">Season List</h3>
+                  <div className="mt-3 space-y-2">
+                    {isLoadingSeasons ? <p className="text-sm text-slate-400">Loading seasons...</p> : null}
+                    {seasons.map((season) => (
+                      <button
+                        key={season.id}
+                        type="button"
+                        onClick={() => setSelectedSeasonId(season.id)}
+                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                          selectedSeasonId === season.id
+                            ? 'border-cyan-400/40 bg-cyan-400/10'
+                            : 'border-slate-800 bg-slate-900 hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-white">{season.name}</p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              {formatSeasonDateRange(season.startDate, season.endDate)}
+                            </p>
+                          </div>
+                          {season.isCurrent ? (
+                            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-100">
+                              Current
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <span className="text-xs uppercase tracking-[0.18em] text-slate-500">{season.status}</span>
+                          {!season.isCurrent ? (
+                            <span className="text-xs font-medium text-cyan-200">Select to manage</span>
+                          ) : null}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">
+                        {selectedSeason ? `${selectedSeason.name} roster` : 'Season roster'}
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-300">
+                        Promotions and relegations live here. Adjust levels or seed ratings before the next rebuild.
+                      </p>
+                    </div>
+                    {selectedSeason && !selectedSeason.isCurrent ? (
+                      <button
+                        type="button"
+                        onClick={() => handleMakeCurrentSeason(selectedSeason)}
+                        disabled={activePlayerId === `season-${selectedSeason.id}`}
+                        className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {activePlayerId === `season-${selectedSeason.id}` ? 'Switching...' : 'Make Current'}
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                    <input
+                      type="text"
+                      value={seasonSearch}
+                      onChange={(event) => setSeasonSearch(event.target.value)}
+                      placeholder="Search promoted or relegated players"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition focus:border-emerald-400"
+                    />
+                    <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs text-slate-400">
+                      {filteredSeasonAssignments.length} players
+                    </div>
+                  </div>
+
+                  {isLoadingSeasonAssignments ? <p className="mt-4 text-sm text-slate-400">Loading season assignments...</p> : null}
+
+                  <div className="mt-4 space-y-2.5">
+                    {filteredSeasonAssignments.map((assignment) => {
+                      const formState = assignmentEditState[assignment.id];
+                      if (!formState) {
+                        return null;
+                      }
+
+                      return (
+                        <article
+                          key={assignment.id}
+                          className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/80 p-3 md:grid-cols-[1.25fr_0.5fr_0.4fr_0.4fr_0.45fr_auto]"
+                        >
+                          <div>
+                            <p className="text-sm font-semibold text-white">{assignment.displayName}</p>
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {assignment.slug} · {assignment.seedSource}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[11px] uppercase tracking-[0.18em] text-slate-400">Level</label>
+                            <select
+                              value={formState.level}
+                              onChange={(event) => updateAssignmentField(assignment.id, 'level', event.target.value as 'INT' | 'PLUS' | 'ADV')}
+                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-400"
+                            >
+                              <option value="INT">INT</option>
+                              <option value="PLUS">PLUS</option>
+                              <option value="ADV">ADV</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[11px] uppercase tracking-[0.18em] text-slate-400">Seed Mu</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={formState.seedMu}
+                              onChange={(event) => updateAssignmentField(assignment.id, 'seedMu', event.target.value)}
+                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-400"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[11px] uppercase tracking-[0.18em] text-slate-400">Seed Sigma</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={formState.seedSigma}
+                              onChange={(event) => updateAssignmentField(assignment.id, 'seedSigma', event.target.value)}
+                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-400"
+                            />
+                          </div>
+                          <div className="flex items-end">
+                            <label className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200">
+                              <input
+                                type="checkbox"
+                                checked={formState.isActive}
+                                onChange={(event) => updateAssignmentField(assignment.id, 'isActive', event.target.checked)}
+                              />
+                              Active
+                            </label>
+                          </div>
+                          <div className="flex gap-2 md:flex-col">
+                            <button
+                              type="button"
+                              onClick={() => handleResetAssignmentBaseline(assignment.id)}
+                              className="flex-1 rounded-xl border border-slate-700 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800"
+                            >
+                              Reset
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveAssignment(assignment.id)}
+                              disabled={activeSeasonAssignmentId === assignment.id}
+                              className="flex-1 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                              {activeSeasonAssignmentId === assignment.id ? 'Saving...' : 'Save'}
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           ) : null}
         </section>
