@@ -205,6 +205,11 @@ export async function listSeasonAssignments(seasonId: string): Promise<PlayerSea
   });
 }
 
+export async function getSeasonAssignmentLevelMap(seasonId: string) {
+  const assignments = await listSeasonAssignments(seasonId);
+  return new Map(assignments.map((assignment) => [assignment.playerId, assignment.level]));
+}
+
 export async function updateSeasonAssignment(
   assignmentId: string,
   updates: Partial<{

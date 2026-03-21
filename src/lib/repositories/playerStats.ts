@@ -3,7 +3,7 @@ import type { PlayerAnalytics } from '@/lib/playerAnalytics';
 import { calculatePlayerAnalytics } from '@/lib/playerAnalytics';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { listProcessedPlayDates } from '@/lib/repositories/leaderboard';
-import { getResolvedSeason } from '@/lib/repositories/seasons';
+import { getResolvedSeason, getSeasonAssignmentLevelMap } from '@/lib/repositories/seasons';
 
 function getSingleRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) {
@@ -49,6 +49,7 @@ export async function getOverallStats(season?: string): Promise<{
   const supabase = createSupabaseAdminClient();
   const { seasons, selectedSeason, currentSeason } = await getResolvedSeason(season);
   const playDates = await listProcessedPlayDates(selectedSeason.id);
+  const seasonLevelMap = await getSeasonAssignmentLevelMap(selectedSeason.id);
   const latestPlayDate = playDates[playDates.length - 1] ?? null;
 
   const [{ data: snapshotsRaw, error: snapshotsError }, { data: statsRaw, error: statsError }, { count: matchCount, error: matchCountError }] =
@@ -121,7 +122,7 @@ export async function getOverallStats(season?: string): Promise<{
 
       return {
         playerName: player.display_name,
-        level: player.level,
+        level: seasonLevelMap.get(snapshot.player_id) ?? player.level,
         currentRating: snapshot.skill_rating,
         totalMatches: stats.totalMatches,
         matchesWon: stats.matchesWon,
