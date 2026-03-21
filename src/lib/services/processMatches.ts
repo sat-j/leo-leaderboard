@@ -20,6 +20,7 @@ interface ProcessingParticipant {
 
 interface ProcessingMatch {
   id: string;
+  seasonId: string;
   playedAt: string;
   playDateId: string;
   playDate: string;
@@ -33,6 +34,14 @@ interface DailyPlayerAccumulator {
   matchesWon: number;
   pointsScored: number;
   pointsConceded: number;
+}
+
+interface SeasonSeedRow {
+  season_id: string;
+  player_id: string;
+  level: 'PLUS' | 'INT' | 'ADV';
+  seed_mu: number;
+  seed_sigma: number;
 }
 
 function chunkArray<T>(items: T[], size: number): T[][] {
@@ -81,6 +90,11 @@ function normalizeMatchRows(rows: Awaited<ReturnType<typeof listMatchesForProces
       continue;
     }
 
+    if (!row.season_id) {
+      warnings.push(`Skipped match ${row.id}: missing season relation.`);
+      continue;
+    }
+
     if (participants.length !== 4) {
       warnings.push(
         `Skipped match ${row.id}: expected 4 participants, found ${participants.length}.`
@@ -90,6 +104,7 @@ function normalizeMatchRows(rows: Awaited<ReturnType<typeof listMatchesForProces
 
     matches.push({
       id: row.id,
+      seasonId: row.season_id,
       playedAt: row.played_at,
       playDateId: playDateRow.id,
       playDate: playDateRow.play_date,
@@ -106,6 +121,24 @@ function skillRating(rating: Rating) {
   return rating.mu - 3 * rating.sigma;
 }
 
+async function loadSeasonSeedMap(seasonIds: string[]) {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from('player_season_assignments')
+    .select('season_id, player_id, level, seed_mu, seed_sigma')
+    .in('season_id', seasonIds);
+
+  if (error) {
+    throw error;
+  }
+
+  const seedMap = new Map<string, SeasonSeedRow>();
+  for (const row of (data ?? []) as SeasonSeedRow[]) {
+    seedMap.set(`${row.season_id}:${row.player_id}`, row);
+  }
+  return seedMap;
+}
+
 export async function rebuildAllProcessedData(processingRunId: string): Promise<ProcessingRunSummary> {
   const supabase = createSupabaseAdminClient();
   let rawMatches;
@@ -116,32 +149,12 @@ export async function rebuildAllProcessedData(processingRunId: string): Promise<
   }
   const normalized = normalizeMatchRows(rawMatches);
   const matches = normalized.matches;
+  const seasonSeedMap = await loadSeasonSeedMap(Array.from(new Set(matches.map((match) => match.seasonId))));
 
-  const ratings = new Map<string, Rating>();
-  const playerMeta = new Map<string, ProcessingPlayer>();
   const warnings: string[] = [...normalized.warnings];
 
-  for (const match of matches) {
-    for (const participant of match.participants) {
-      playerMeta.set(participant.player.id, participant.player);
-      if (!ratings.has(participant.player.id)) {
-        ratings.set(participant.player.id, new Rating(participant.player.initialMu, participant.player.initialSigma));
-      }
-    }
-  }
-
-  const matchesByDate = new Map<string, ProcessingMatch[]>();
-  for (const match of matches) {
-    const dateMatches = matchesByDate.get(match.playDateId) ?? [];
-    dateMatches.push(match);
-    matchesByDate.set(match.playDateId, dateMatches);
-  }
-
-  const sortedDates = Array.from(matchesByDate.entries()).sort((left, right) => {
-    return left[1][0].playDate.localeCompare(right[1][0].playDate);
-  });
-
   const ratingSnapshotRows: Array<{
+    season_id: string;
     player_id: string;
     play_date_id: string;
     processing_run_id: string;
@@ -152,6 +165,7 @@ export async function rebuildAllProcessedData(processingRunId: string): Promise<
     rank_overall: number;
   }> = [];
   const playerDateStatRows: Array<{
+    season_id: string;
     player_id: string;
     play_date_id: string;
     matches_played: number;
@@ -164,7 +178,42 @@ export async function rebuildAllProcessedData(processingRunId: string): Promise<
   }> = [];
   const processedMatchIds: string[] = [];
 
-  for (const [playDateId, dateMatches] of sortedDates) {
+  const matchesBySeason = new Map<string, ProcessingMatch[]>();
+  for (const match of matches) {
+    const seasonMatches = matchesBySeason.get(match.seasonId) ?? [];
+    seasonMatches.push(match);
+    matchesBySeason.set(match.seasonId, seasonMatches);
+  }
+
+  const sortedSeasons = Array.from(matchesBySeason.entries()).sort((left, right) =>
+    left[1][0].playDate.localeCompare(right[1][0].playDate)
+  );
+
+  for (const [seasonId, seasonMatches] of sortedSeasons) {
+    const ratings = new Map<string, Rating>();
+    const matchesByDate = new Map<string, ProcessingMatch[]>();
+
+    for (const match of seasonMatches) {
+      for (const participant of match.participants) {
+        if (!ratings.has(participant.player.id)) {
+          const seed = seasonSeedMap.get(`${seasonId}:${participant.player.id}`);
+          ratings.set(
+            participant.player.id,
+            new Rating(seed?.seed_mu ?? participant.player.initialMu, seed?.seed_sigma ?? participant.player.initialSigma)
+          );
+        }
+      }
+
+      const dateMatches = matchesByDate.get(match.playDateId) ?? [];
+      dateMatches.push(match);
+      matchesByDate.set(match.playDateId, dateMatches);
+    }
+
+    const sortedDates = Array.from(matchesByDate.entries()).sort((left, right) => {
+      return left[1][0].playDate.localeCompare(right[1][0].playDate);
+    });
+
+    for (const [playDateId, dateMatches] of sortedDates) {
     const dailyStats = new Map<string, DailyPlayerAccumulator>();
     const previousMu = new Map<string, number>();
 
@@ -249,6 +298,7 @@ export async function rebuildAllProcessedData(processingRunId: string): Promise<
 
     rankedPlayers.forEach((entry, index) => {
       ratingSnapshotRows.push({
+        season_id: seasonId,
         player_id: entry.playerId,
         play_date_id: playDateId,
         processing_run_id: processingRunId,
@@ -265,6 +315,7 @@ export async function rebuildAllProcessedData(processingRunId: string): Promise<
       const previous = previousMu.get(playerId) ?? currentRating?.mu ?? 0;
       const currentMu = currentRating?.mu ?? previous;
       playerDateStatRows.push({
+        season_id: seasonId,
         player_id: playerId,
         play_date_id: playDateId,
         matches_played: stats.matchesPlayed,
@@ -276,6 +327,7 @@ export async function rebuildAllProcessedData(processingRunId: string): Promise<
         rating_change: Number((currentMu - previous).toFixed(3)),
       });
     }
+  }
   }
 
   const { error: deleteSnapshotsError } = await supabase.from('rating_snapshots').delete().gte('created_at', '1970-01-01T00:00:00+00:00');
@@ -315,7 +367,7 @@ export async function rebuildAllProcessedData(processingRunId: string): Promise<
     }
   }
 
-  const processedDateIds = sortedDates.map(([playDateId]) => playDateId);
+  const processedDateIds = Array.from(new Set(matches.map((match) => match.playDateId)));
   if (processedDateIds.length > 0) {
     for (const playDateIdChunk of chunkArray(processedDateIds, 200)) {
       const { error: updateDatesError } = await supabase
@@ -334,7 +386,7 @@ export async function rebuildAllProcessedData(processingRunId: string): Promise<
 
   return {
     matchesProcessed: processedMatchIds.length,
-    playDatesProcessed: sortedDates.length,
+    playDatesProcessed: processedDateIds.length,
     snapshotsWritten: ratingSnapshotRows.length,
     playerDateStatsWritten: playerDateStatRows.length,
     warnings,

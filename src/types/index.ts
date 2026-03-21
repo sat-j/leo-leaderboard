@@ -114,10 +114,37 @@ export interface PlayDateOption {
   matchCount: number;
 }
 
+export interface SeasonOption {
+  id: string;
+  name: string;
+  slug: string;
+  startDate: string;
+  endDate: string | null;
+  isCurrent: boolean;
+  status: 'draft' | 'active' | 'completed' | 'archived';
+}
+
+export interface PlayerSeasonAssignment {
+  id: string;
+  seasonId: string;
+  playerId: string;
+  displayName: string;
+  slug: string;
+  level: PlayerLevel;
+  seedMu: number;
+  seedSigma: number;
+  seedSource: 'level_baseline' | 'carryover' | 'manual';
+  isActive: boolean;
+}
+
 export interface PublicLeaderboardData extends Omit<LeaderboardData, 'currentWeek'> {
+  selectedSeason: string;
+  selectedSeasonName: string;
+  currentSeason: string | null;
   selectedDate: string;
   selectedDateLabel: string;
   previousDate: string | null;
   nextDate: string | null;
+  seasons: SeasonOption[];
   playDates: PlayDateOption[];
 }

@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getErrorMessage } from '@/lib/errors';
 import { getOverallStats } from '@/lib/repositories/playerStats';
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const data = await getOverallStats();
+    const { searchParams } = new URL(request.url);
+    const season = searchParams.get('season') ?? undefined;
+    const data = await getOverallStats(season);
     return NextResponse.json({
       success: true,
       data,

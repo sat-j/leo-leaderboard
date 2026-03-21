@@ -1,5 +1,6 @@
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { formatClubDateLabel, formatClubDateLongLabel, toClubDateString } from '@/lib/dates';
+import { getResolvedSeason } from '@/lib/repositories/seasons';
 import type { MatchInput } from '@/lib/validation/matches';
 
 function buildPlayDateLabels(date: Date) {
@@ -23,7 +24,7 @@ async function ensurePlayersExist(playerIds: string[]) {
   return missingIds;
 }
 
-async function upsertPlayDateForTimestamp(playedAt: string) {
+async function upsertPlayDateForTimestamp(playedAt: string, seasonId: string) {
   const supabase = createSupabaseAdminClient();
   const playedAtDate = new Date(playedAt);
   const playDate = toClubDateString(playedAt);
@@ -33,6 +34,7 @@ async function upsertPlayDateForTimestamp(playedAt: string) {
     .from('play_dates')
     .upsert(
       {
+        season_id: seasonId,
         play_date: playDate,
         label_short: labels.short,
         label_long: labels.long,
@@ -73,17 +75,19 @@ async function refreshPlayDateMatchCount(playDateId: string) {
 export async function createMatch(input: MatchInput) {
   const supabase = createSupabaseAdminClient();
   const playDate = toClubDateString(input.playedAt);
+  const { selectedSeason } = await getResolvedSeason();
 
   const missingPlayerIds = await ensurePlayersExist(input.players.map((player) => player.playerId));
   if (missingPlayerIds.length > 0) {
     throw new Error(`Unknown players: ${missingPlayerIds.join(', ')}`);
   }
 
-  const playDateRow = await upsertPlayDateForTimestamp(input.playedAt);
+  const playDateRow = await upsertPlayDateForTimestamp(input.playedAt, selectedSeason.id);
 
   const { data: insertedMatch, error: matchError } = await supabase
     .from('matches')
     .insert({
+      season_id: selectedSeason.id,
       play_date_id: playDateRow.id,
       played_at: input.playedAt,
       score1: input.score1,
@@ -396,7 +400,7 @@ export async function updateMatch(
   const supabase = createSupabaseAdminClient();
   const { data: existingMatch, error: existingMatchError } = await supabase
     .from('matches')
-    .select('id, play_date_id, played_at')
+    .select('id, season_id, play_date_id, played_at')
     .eq('id', matchId)
     .single();
 
@@ -420,8 +424,10 @@ export async function updateMatch(
   }
 
   if (updates.playedAt) {
-    const playDateRow = await upsertPlayDateForTimestamp(updates.playedAt);
+    const seasonId = existingMatch.season_id ?? (await getResolvedSeason()).selectedSeason.id;
+    const playDateRow = await upsertPlayDateForTimestamp(updates.playedAt, seasonId);
     updatePayload.played_at = updates.playedAt;
+    updatePayload.season_id = seasonId;
     updatePayload.play_date_id = playDateRow.id;
     nextPlayDateId = playDateRow.id;
   }
@@ -497,6 +503,7 @@ export async function listMatchesForProcessing() {
   const pageSize = 500;
   type ProcessingMatchRow = {
     id: string;
+    season_id: string | null;
     played_at: string;
     score1: number;
     score2: number;
@@ -546,6 +553,7 @@ export async function listMatchesForProcessing() {
       .select(
         `
           id,
+          season_id,
           played_at,
           score1,
           score2,

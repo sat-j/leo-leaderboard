@@ -3,13 +3,18 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
+import SeasonNavigation from '@/components/SeasonNavigation';
 import PlayerStatsTable from '@/components/PlayerStatsTable';
-import { PlayerOverallStat } from '@/types';
+import { PlayerOverallStat, SeasonOption } from '@/types';
 
 interface OverallData {
   overallStats: PlayerOverallStat[];
   totalPlayDates: number;
   totalMatches: number;
+  seasons: SeasonOption[];
+  selectedSeason: string;
+  selectedSeasonName: string;
+  currentSeason: string | null;
 }
 
 export default function OverallPage() {
@@ -17,12 +22,18 @@ export default function OverallPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchOverallData = async () => {
+  const fetchOverallData = async (season?: string) => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch('/api/public/leaderboard/overall');
+      const query = new URLSearchParams();
+      if (season) {
+        query.set('season', season);
+      }
+      const response = await fetch(
+        query.size > 0 ? `/api/public/leaderboard/overall?${query.toString()}` : '/api/public/leaderboard/overall'
+      );
       const result = await response.json();
 
       if (!response.ok || !result.success) {
@@ -61,7 +72,7 @@ export default function OverallPage() {
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Error Loading Data</h2>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
-            onClick={fetchOverallData}
+            onClick={() => fetchOverallData(data?.selectedSeason)}
             className="bg-electric-600 text-white px-6 py-2 rounded-lg hover:bg-electric-700 transition-colors"
           >
             Retry
@@ -80,7 +91,7 @@ export default function OverallPage() {
       <div className="container mx-auto px-4 py-8 max-w-7xl">
         <div className="text-center mb-8">
           <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">Overall Statistics</h1>
-          <p className="text-electric-200">Cumulative player statistics across all processed play dates</p>
+          <p className="text-electric-200">{data.selectedSeasonName} overall standings</p>
           <div className="mt-4 flex justify-center gap-4 text-electric-200 text-sm">
             <span>
               Total Play Dates:{' '}
@@ -97,6 +108,13 @@ export default function OverallPage() {
             </span>
           </div>
         </div>
+
+        <SeasonNavigation
+          seasons={data.seasons}
+          selectedSeason={data.selectedSeason}
+          currentSeason={data.currentSeason}
+          onSeasonChange={fetchOverallData}
+        />
 
         <div className="mb-6">
           <Link href="/" className="inline-flex items-center gap-2 text-white hover:text-coral-500 transition-colors">
