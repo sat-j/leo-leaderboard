@@ -12,7 +12,7 @@ import type {
   PlayDateOption,
 } from '@/types';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { getResolvedSeason } from '@/lib/repositories/seasons';
+import { getResolvedSeason, getSeasonAssignmentLevelMap } from '@/lib/repositories/seasons';
 
 interface SnapshotRow {
   player_id: string;
@@ -154,6 +154,7 @@ export async function getPublicLeaderboard(date?: string, season?: string): Prom
   const supabase = createSupabaseAdminClient();
   const { seasons, selectedSeason, currentSeason } = await getResolvedSeason(season);
   const playDates = await listProcessedPlayDates(selectedSeason.id);
+  const seasonLevelMap = await getSeasonAssignmentLevelMap(selectedSeason.id);
 
   if (playDates.length === 0) {
     return {
@@ -205,7 +206,7 @@ export async function getPublicLeaderboard(date?: string, season?: string): Prom
       previousPlayDateId
         ? supabase
             .from('rating_snapshots')
-            .select('player_id, play_date_id, mu, sigma, skill_rating, rating_change, rank_overall, players ( id, display_name, level )')
+        .select('player_id, play_date_id, mu, sigma, skill_rating, rating_change, rank_overall, players ( id, display_name, level )')
             .eq('season_id', selectedSeason.id)
             .eq('play_date_id', previousPlayDateId)
         : Promise.resolve({ data: [], error: null } as any),
@@ -297,13 +298,14 @@ export async function getPublicLeaderboard(date?: string, season?: string): Prom
     if (!player || !dateStats || dateStats.matches_played === 0) {
       continue;
     }
+    const seasonLevel = seasonLevelMap.get(snapshot.player_id) ?? player.level;
 
-    levelLeaderboards[player.level]?.push({
+    levelLeaderboards[seasonLevel]?.push({
       playerName: player.display_name,
       mu: snapshot.mu,
       sigma: snapshot.sigma,
       week: selectedIndex + 1,
-      level: player.level,
+      level: seasonLevel,
       ratingGain: snapshot.rating_change ?? 0,
     });
   }
@@ -321,7 +323,7 @@ export async function getPublicLeaderboard(date?: string, season?: string): Prom
       const stats = statsByPlayerId.get(snapshot.player_id)!;
       return {
         playerName: player?.display_name ?? 'Unknown',
-        level: player?.level ?? 'INT',
+        level: seasonLevelMap.get(snapshot.player_id) ?? player?.level ?? 'INT',
         skillRating: snapshot.skill_rating,
         totalMatches: stats.matches_played,
         matchesWon: stats.matches_won,
